@@ -62,6 +62,8 @@ logger = logging.getLogger(__name__)
 _qr_queues = {}      # event_id -> queue.Queue[{qr_code, image, entry_url}]
 _qr_queue_locks = {} # event_id -> threading.Lock()
 _qr_url_prefixes = {} # event_id -> "http(s)://host"
+_qr_expires_at = {}  # event_id -> datetime (缓存过期时间，不依赖数据库活跃码)
+_qr_operators = {}   # event_id -> User (缓存操作者，不依赖数据库活跃码)
 
 
 def _generate_one_qr(event, operator, request, expires_at, url_prefix):
@@ -92,6 +94,10 @@ def _refill_queue(event_id, capacity=2):
         if q is None:
             return
         url_prefix = _qr_url_prefixes.get(event_id, '')
+        expires_at = _qr_expires_at.get(event_id)
+        operator = _qr_operators.get(event_id)
+        if expires_at is None or operator is None:
+            return
         while q.qsize() < capacity:
             try:
                 from .models import Event as _Event
@@ -101,11 +107,6 @@ def _refill_queue(event_id, capacity=2):
                     _Event.Status.CHECKIN_CLOSED,
                 }:
                     break
-                active_qr = event_obj.qr_codes.filter(is_active=True).first()
-                if active_qr is None:
-                    break
-                expires_at = active_qr.expires_at
-                operator = active_qr.created_by
                 data = _generate_one_qr(event_obj, operator, None, expires_at, url_prefix)
                 q.put(data)
             except Exception:
@@ -126,6 +127,8 @@ def init_event_qr_queue(event, request, expires_at, capacity=2):
         return
     url_prefix = request.build_absolute_uri('/')
     _qr_url_prefixes[event_id] = url_prefix
+    _qr_expires_at[event_id] = expires_at
+    _qr_operators[event_id] = request.user
     q = queue.Queue(maxsize=capacity + 2)
     _qr_queues[event_id] = q
     _qr_queue_locks[event_id] = threading.Lock()
@@ -144,6 +147,8 @@ def clear_event_qr_queue(event_id):
     q = _qr_queues.pop(event_id, None)
     _qr_queue_locks.pop(event_id, None)
     _qr_url_prefixes.pop(event_id, None)
+    _qr_expires_at.pop(event_id, None)
+    _qr_operators.pop(event_id, None)
     if q is not None:
         while not q.empty():
             try:
