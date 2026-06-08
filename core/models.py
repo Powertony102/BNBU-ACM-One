@@ -110,6 +110,11 @@ class Event(models.Model):
         CONTEST = 'contest', '比赛'
         OTHER = 'other', '其他'
 
+    class ReviewStatus(models.TextChoices):
+        PENDING = 'pending', '待审核'
+        APPROVED = 'approved', '已通过'
+        REJECTED = 'rejected', '已驳回'
+
     class Status(models.TextChoices):
         DRAFT = 'draft', '草稿'
         PUBLISHED = 'published', '已发布'
@@ -125,6 +130,32 @@ class Event(models.Model):
     checkin_start_time = models.DateTimeField()
     checkin_end_time = models.DateTimeField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    applicant = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='applied_events',
+    )
+    checkin_managers = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name='managed_events',
+    )
+    review_status = models.CharField(
+        max_length=20,
+        choices=ReviewStatus.choices,
+        default=ReviewStatus.APPROVED,
+    )
+    reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reviewed_events',
+    )
+    review_note = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='created_events')
     published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -139,9 +170,47 @@ class Event(models.Model):
     def is_checkin_open(self):
         now = timezone.now()
         return (
-            self.status == self.Status.PUBLISHED
+            self.review_status == self.ReviewStatus.APPROVED
+            and self.status == self.Status.PUBLISHED
             and self.checkin_start_time <= now <= self.checkin_end_time
         )
+
+    def is_visible_to_members(self):
+        return self.review_status == self.ReviewStatus.APPROVED and self.status != self.Status.CANCELED
+
+    def can_manage_checkin(self, user):
+        if not getattr(user, 'is_authenticated', False):
+            return False
+        if user.is_management():
+            return True
+        if (
+            user.role != User.Roles.MEMBER
+            or self.review_status != self.ReviewStatus.APPROVED
+            or self.status == self.Status.CANCELED
+        ):
+            return False
+        if user.id == self.applicant_id:
+            return True
+        prefetched_managers = getattr(self, '_prefetched_objects_cache', {}).get('checkin_managers')
+        if prefetched_managers is not None:
+            return any(manager.id == user.id for manager in prefetched_managers)
+        return self.checkin_managers.filter(id=user.id).exists()
+
+    def get_checkin_manager_names(self):
+        managers = getattr(self, '_prefetched_objects_cache', {}).get('checkin_managers')
+        if managers is None:
+            managers = self.checkin_managers.select_related('member_profile').all()
+        return [manager.member_profile.real_name or manager.username for manager in managers]
+
+    @property
+    def checkin_manager_display(self):
+        return '、'.join(self.get_checkin_manager_names()) or '未指定'
+
+    def is_pending_review(self):
+        return self.review_status == self.ReviewStatus.PENDING
+
+    def is_member_application(self):
+        return self.applicant_id is not None
 
     def get_absolute_url(self):
         return reverse('member-event-detail', args=[self.pk])

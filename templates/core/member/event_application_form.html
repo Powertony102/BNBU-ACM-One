@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | One BNBU-ACM{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">成员活动申请</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ page_title }}</h2>
+    <p>填写活动主题、时间和签到窗口后，管理员审核通过即会自动生效；通过后你可以仅针对这次活动管理签到二维码与签到关闭。</p>
+</section>
+
+<section class="card">
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="inline-actions">
+            <button type="submit">提交申请</button>
+            <a class="button ghost" href="{% url 'member-event-list' %}">返回活动列表</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

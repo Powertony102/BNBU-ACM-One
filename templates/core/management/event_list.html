@@ -11,7 +11,13 @@
 {% block content %}
 <section class="page-hero">
     <h2>活动管理</h2>
-    <p>在这里创建、编辑、发布活动，并查看对应的签到入口和签到人数。</p>
+    <p>在这里创建、编辑、发布活动，并审核成员提交的活动申请。审核通过后，申请人和已指定的签到管理员都可以管理该活动的签到。</p>
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ pending_application_total }}</strong>
+            <span>待审核申请</span>
+        </div>
+    </div>
 </section>
 
 <section class="card">
@@ -19,9 +25,13 @@
         <thead>
             <tr>
                 <th>活动</th>
+                <th>申请人</th>
+                <th>签到管理员</th>
+                <th>审核状态</th>
                 <th>时间</th>
                 <th>状态</th>
                 <th>签到人数</th>
+                <th>操作</th>
             </tr>
         </thead>
         <tbody>
@@ -31,13 +41,42 @@
                         <a class="table-title" href="{% url 'event-detail-manage' event.id %}">{{ event.title }}</a>
                         <div class="table-subtitle">{{ event.location }}</div>
                     </td>
+                    <td>
+                        {% if event.applicant %}
+                            {{ event.applicant.member_profile.real_name|default:event.applicant.username }}
+                        {% else %}
+                            后台创建
+                        {% endif %}
+                    </td>
+                    <td>
+                        {{ event.checkin_manager_display }}
+                    </td>
+                    <td>
+                        <span class="badge {% if event.review_status == 'approved' %}live{% elif event.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                            {{ event.get_review_status_display }}
+                        </span>
+                    </td>
                     <td>{{ event.start_time|date:"Y-m-d H:i" }}</td>
                     <td><span class="badge {% if event.status == 'published' %}live{% else %}dim{% endif %}">{{ event.get_status_display }}</span></td>
                     <td>{{ event.checkin_total }}</td>
+                    <td>
+                        <div class="inline-actions">
+                            <a class="quick-link" href="{% url 'event-detail-manage' event.id %}">详情</a>
+                            <a class="button ghost" href="{% url 'event-edit' event.id %}">编辑</a>
+                            {% if event.status != 'canceled' %}
+                                <form method="post" action="{% url 'event-delete' event.id %}" onsubmit="return confirm('确认删除这场活动吗？系统会将其标记为已作废。');">
+                                    {% csrf_token %}
+                                    <button class="button subtle" type="submit">删除</button>
+                                </form>
+                            {% else %}
+                                <span class="muted">已删除</span>
+                            {% endif %}
+                        </div>
+                    </td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="4">还没有活动。</td>
+                    <td colspan="8">还没有活动。</td>
                 </tr>
             {% endfor %}
         </tbody>

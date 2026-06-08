@@ -5,19 +5,389 @@
 {% block topbar_subtitle %}<div class="topbar-subtitle">活动配置</div>{% endblock %}
 
 {% block content %}
+<style>
+    .form-grid {
+        display: grid;
+        gap: 16px;
+    }
+
+    .form-row label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+    }
+
+    .form-row .helptext {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    .form-row ul.errorlist {
+        margin: 8px 0 0;
+        padding-left: 18px;
+        color: var(--destructive);
+    }
+
+    .picker-shell {
+        display: grid;
+        gap: 10px;
+    }
+
+    .picker-trigger {
+        width: 100%;
+        justify-content: space-between;
+        background: var(--card);
+        color: var(--foreground);
+        border-color: var(--border);
+    }
+
+    .picker-trigger:hover,
+    .picker-trigger:focus-visible {
+        background: #f3f4f6;
+        color: var(--foreground);
+        border-color: #d4d4d8;
+    }
+
+    .picker-meta {
+        padding: 12px 14px;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        background: #fcfcfc;
+        color: var(--muted-foreground);
+    }
+
+    .picker-modal[hidden] {
+        display: none;
+    }
+
+    .picker-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(9, 9, 11, 0.45);
+    }
+
+    .picker-panel {
+        width: min(760px, 100%);
+        max-height: min(78vh, 720px);
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+    }
+
+    .picker-header,
+    .picker-footer {
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .picker-footer {
+        border-bottom: 0;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .picker-search {
+        padding: 0 20px 18px;
+    }
+
+    .picker-search input {
+        width: 100%;
+    }
+
+    .picker-list {
+        overflow: auto;
+        padding: 0 20px 20px;
+        display: grid;
+        gap: 10px;
+    }
+
+    .picker-option {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 4px;
+        text-align: left;
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #fcfcfc;
+        color: var(--foreground);
+        cursor: pointer;
+    }
+
+    .picker-option:hover,
+    .picker-option.active {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+    }
+
+    .picker-option strong {
+        display: block;
+    }
+
+    .picker-option span {
+        display: block;
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.45;
+    }
+
+    .picker-selection-note {
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+</style>
 <section class="page-hero">
     <h2>{{ page_title }}</h2>
-    <p>这里先实现原型所需的最小活动配置：基本信息、活动时间和签到时间窗口。</p>
+    <p>这里配置活动基本信息、活动时间和签到时间窗口；如有需要，也可以指定最多 5 名 Member 代为管理这场活动的签到。</p>
 </section>
 
 <section class="card">
-    <form method="post">
+    <form method="post" class="form-grid">
         {% csrf_token %}
-        {{ form.as_p }}
+        {{ form.non_field_errors }}
+        {% for hidden in form.hidden_fields %}
+            {% if hidden.name != 'checkin_managers' %}
+                {{ hidden }}
+            {% endif %}
+        {% endfor %}
+        <div id="checkin-manager-hidden-inputs">
+            {% for value in selected_checkin_manager_ids %}
+                <input type="hidden" name="checkin_managers" value="{{ value }}">
+            {% endfor %}
+        </div>
+
+        <div class="form-row">
+            {{ form.title.label_tag }}
+            {{ form.title }}
+            {{ form.title.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.event_type.label_tag }}
+            {{ form.event_type }}
+            {{ form.event_type.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.description.label_tag }}
+            {{ form.description }}
+            {{ form.description.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.location.label_tag }}
+            {{ form.location }}
+            {{ form.location.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.start_time.label_tag }}
+            {{ form.start_time }}
+            {{ form.start_time.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.end_time.label_tag }}
+            {{ form.end_time }}
+            {{ form.end_time.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.checkin_start_time.label_tag }}
+            {{ form.checkin_start_time }}
+            {{ form.checkin_start_time.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.checkin_end_time.label_tag }}
+            {{ form.checkin_end_time }}
+            {{ form.checkin_end_time.errors }}
+        </div>
+
+        <div class="form-row">
+            <label for="checkin-manager-open">签到管理员 Members</label>
+            <div class="picker-shell">
+                <button class="button picker-trigger" type="button" id="checkin-manager-open">
+                    <span id="checkin-manager-label">未指定</span>
+                    <span>搜索选择（最多 5 名）</span>
+                </button>
+                <div class="picker-meta" id="checkin-manager-meta">当前未指定签到管理员。</div>
+                <div class="picker-selection-note" id="checkin-manager-note">已选择 0 / 5 名</div>
+                {{ form.checkin_managers.errors }}
+                <span class="helptext">{{ form.fields.checkin_managers.help_text }}</span>
+            </div>
+        </div>
+
+        <div class="form-row">
+            {{ form.status.label_tag }}
+            {{ form.status }}
+            {{ form.status.errors }}
+        </div>
+
         <div class="inline-actions">
             <button type="submit">保存活动</button>
             <a class="button ghost" href="{% url 'event-list-manage' %}">返回活动列表</a>
         </div>
     </form>
 </section>
+
+<div class="picker-modal" id="checkin-manager-modal" hidden>
+    <div class="picker-panel">
+        <div class="picker-header">
+            <h3 style="margin: 0;">选择签到管理员</h3>
+            <p class="muted" style="margin: 8px 0 0;">可按姓名、邮箱、学号或用户名搜索 Member，点击即可添加或取消，最多 5 名。</p>
+        </div>
+        <div class="picker-search">
+            <input id="checkin-manager-search" type="search" placeholder="搜索姓名 / 邮箱 / 学号 / 用户名">
+        </div>
+        <div class="picker-list" id="checkin-manager-list"></div>
+        <div class="picker-footer">
+            <span class="picker-selection-note" id="checkin-manager-footer-note">已选择 0 / 5 名</span>
+            <button class="button ghost" type="button" id="checkin-manager-clear">清空指定</button>
+            <button class="button secondary" type="button" id="checkin-manager-close">关闭</button>
+        </div>
+    </div>
+</div>
+
+{{ checkin_manager_choices|json_script:"checkin-manager-options" }}
+{{ selected_checkin_manager_ids|json_script:"selected-checkin-manager-ids" }}
+<script>
+    (() => {
+        const hiddenInputs = document.getElementById('checkin-manager-hidden-inputs');
+        const openButton = document.getElementById('checkin-manager-open');
+        const closeButton = document.getElementById('checkin-manager-close');
+        const clearButton = document.getElementById('checkin-manager-clear');
+        const modal = document.getElementById('checkin-manager-modal');
+        const searchInput = document.getElementById('checkin-manager-search');
+        const list = document.getElementById('checkin-manager-list');
+        const label = document.getElementById('checkin-manager-label');
+        const meta = document.getElementById('checkin-manager-meta');
+        const note = document.getElementById('checkin-manager-note');
+        const footerNote = document.getElementById('checkin-manager-footer-note');
+        const rawOptions = JSON.parse(document.getElementById('checkin-manager-options').textContent);
+        const initialSelectedIds = JSON.parse(document.getElementById('selected-checkin-manager-ids').textContent);
+        const selectionLimit = 5;
+        let selectedIds = initialSelectedIds.map((value) => String(value));
+
+        function syncHiddenInputs() {
+            hiddenInputs.innerHTML = selectedIds.map((id) => `
+                <input type="hidden" name="checkin_managers" value="${id}">
+            `).join('');
+        }
+
+        function getSelectedOptions() {
+            return rawOptions.filter((option) => selectedIds.includes(String(option.id)));
+        }
+
+        function updateSelectedSummary() {
+            const selected = getSelectedOptions();
+            if (selected.length) {
+                label.textContent = `已选择 ${selected.length} 名`;
+                meta.textContent = selected
+                    .map((option) => `${option.real_name} (${option.student_id})`)
+                    .join('、');
+            } else {
+                label.textContent = '未指定';
+                meta.textContent = '当前未指定签到管理员。';
+            }
+            const summary = `已选择 ${selected.length} / ${selectionLimit} 名`;
+            note.textContent = summary;
+            footerNote.textContent = summary;
+        }
+
+        function renderList(keyword = '') {
+            const query = keyword.trim().toLowerCase();
+            const filtered = rawOptions.filter((option) => {
+                if (!query) {
+                    return true;
+                }
+                return [option.real_name, option.student_id, option.email, option.username]
+                    .filter(Boolean)
+                    .some((value) => value.toLowerCase().includes(query));
+            });
+
+            if (!filtered.length) {
+                list.innerHTML = '<div class="picker-meta">没有找到匹配的 Member。</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map((option) => `
+                <button
+                    class="picker-option ${selectedIds.includes(String(option.id)) ? 'active' : ''}"
+                    type="button"
+                    data-id="${option.id}"
+                    aria-pressed="${selectedIds.includes(String(option.id)) ? 'true' : 'false'}"
+                >
+                    <strong>${option.real_name} (${option.student_id})</strong>
+                    <span>${option.email || option.username}</span>
+                    <span>${option.major || '未填写专业'} · 用户名 ${option.username}${selectedIds.includes(String(option.id)) ? ' · 已选择' : ''}</span>
+                </button>
+            `).join('');
+
+            list.querySelectorAll('[data-id]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const targetId = button.dataset.id;
+                    if (selectedIds.includes(targetId)) {
+                        selectedIds = selectedIds.filter((id) => id !== targetId);
+                    } else {
+                        if (selectedIds.length >= selectionLimit) {
+                            footerNote.textContent = `最多只能指定 ${selectionLimit} 名签到管理员`;
+                            return;
+                        }
+                        selectedIds = [...selectedIds, targetId];
+                    }
+                    syncHiddenInputs();
+                    updateSelectedSummary();
+                    renderList(searchInput.value);
+                });
+            });
+        }
+
+        openButton.addEventListener('click', () => {
+            modal.hidden = false;
+            searchInput.value = '';
+            renderList('');
+            searchInput.focus();
+        });
+
+        closeButton.addEventListener('click', () => {
+            modal.hidden = true;
+        });
+
+        clearButton.addEventListener('click', () => {
+            selectedIds = [];
+            syncHiddenInputs();
+            updateSelectedSummary();
+            renderList(searchInput.value);
+        });
+
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                modal.hidden = true;
+            }
+        });
+
+        searchInput.addEventListener('input', () => renderList(searchInput.value));
+        syncHiddenInputs();
+        updateSelectedSummary();
+    })();
+</script>
 {% endblock %}

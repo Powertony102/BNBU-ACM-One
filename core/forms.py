@@ -1,12 +1,14 @@
 import re
+from datetime import timedelta
 
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 
-from .models import AdminProfile, Event, MemberProfile, User
+from .models import AdminProfile, CheckInRecord, Event, MemberProfile, User
 
 
 USERNAME_EXAMPLE = '2330026083'
@@ -42,6 +44,21 @@ def apply_widget_attrs(fields):
         if isinstance(widget, forms.DateTimeInput):
             attrs.setdefault('step', 60)
         widget.attrs = attrs
+
+
+def validate_event_schedule(form, cleaned_data):
+    start_time = cleaned_data.get('start_time')
+    end_time = cleaned_data.get('end_time')
+    checkin_start_time = cleaned_data.get('checkin_start_time')
+    checkin_end_time = cleaned_data.get('checkin_end_time')
+    if start_time and end_time and end_time <= start_time:
+        form.add_error('end_time', '结束时间必须晚于开始时间。')
+    if checkin_start_time and checkin_end_time and checkin_end_time <= checkin_start_time:
+        form.add_error('checkin_end_time', '签到结束时间必须晚于签到开始时间。')
+    if start_time and checkin_start_time and checkin_start_time > start_time:
+        form.add_error('checkin_start_time', '签到开始时间不能晚于活动开始时间。')
+    if end_time and checkin_end_time and checkin_end_time > end_time + timedelta(days=1):
+        form.add_error('checkin_end_time', '签到结束时间不能晚于活动结束后 24 小时。')
 
 
 class LoginForm(AuthenticationForm):
@@ -345,6 +362,13 @@ class MemberProfileForm(forms.ModelForm):
 
 
 class EventForm(forms.ModelForm):
+    checkin_managers = forms.ModelMultipleChoiceField(
+        label='签到管理员 Members',
+        required=False,
+        queryset=User.objects.none(),
+        help_text='最多可指定 5 名 Member 管理该活动的签到二维码、完整签到名单、补签与撤销。',
+        widget=forms.MultipleHiddenInput(),
+    )
     start_time = forms.DateTimeField(label='开始时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
     end_time = forms.DateTimeField(label='结束时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
     checkin_start_time = forms.DateTimeField(
@@ -367,6 +391,7 @@ class EventForm(forms.ModelForm):
             'end_time',
             'checkin_start_time',
             'checkin_end_time',
+            'checkin_managers',
             'status',
         ]
         labels = {
@@ -380,18 +405,127 @@ class EventForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
+        self.fields['checkin_managers'].queryset = (
+            User.objects.filter(
+                role=User.Roles.MEMBER,
+                is_active=True,
+                member_profile__status=MemberProfile.Status.ACTIVE,
+            )
+            .select_related('member_profile')
+            .order_by('member_profile__real_name', 'username')
+        )
+        self.fields['checkin_managers'].label_from_instance = (
+            lambda user: f'{user.member_profile.real_name} ({user.member_profile.student_id})'
+        )
+
+    def clean_checkin_managers(self):
+        checkin_managers = self.cleaned_data['checkin_managers']
+        if checkin_managers.count() > 5:
+            raise forms.ValidationError('签到管理员最多只能指定 5 名。')
+        return checkin_managers
 
     def clean(self):
         cleaned_data = super().clean()
-        start_time = cleaned_data.get('start_time')
-        end_time = cleaned_data.get('end_time')
-        checkin_start_time = cleaned_data.get('checkin_start_time')
-        checkin_end_time = cleaned_data.get('checkin_end_time')
-        if start_time and end_time and end_time <= start_time:
-            self.add_error('end_time', '结束时间必须晚于开始时间。')
-        if checkin_start_time and checkin_end_time and checkin_end_time <= checkin_start_time:
-            self.add_error('checkin_end_time', '签到结束时间必须晚于签到开始时间。')
+        validate_event_schedule(self, cleaned_data)
         return cleaned_data
+
+
+class EventApplicationForm(forms.ModelForm):
+    start_time = forms.DateTimeField(label='开始时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
+    end_time = forms.DateTimeField(label='结束时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
+    checkin_start_time = forms.DateTimeField(
+        label='签到开始时间',
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+    )
+    checkin_end_time = forms.DateTimeField(
+        label='签到结束时间',
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+    )
+
+    class Meta:
+        model = Event
+        fields = [
+            'title',
+            'event_type',
+            'description',
+            'location',
+            'start_time',
+            'end_time',
+            'checkin_start_time',
+            'checkin_end_time',
+        ]
+        labels = {
+            'title': '活动名称',
+            'event_type': '活动类型',
+            'description': '活动说明',
+            'location': '活动地点',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['description'].help_text = '可填写活动目的、分享主题或讲座安排，方便管理员审核。'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        validate_event_schedule(self, cleaned_data)
+        return cleaned_data
+
+
+class EventReviewForm(forms.Form):
+    review_note = forms.CharField(
+        label='审核说明',
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': '可填写通过/驳回原因，便于申请人查看。'}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+
+
+class ManualCheckInForm(forms.Form):
+    member_keyword = forms.CharField(
+        label='队员学号或用户名',
+        max_length=150,
+        help_text='输入队员学号或登录用户名，为该活动补签。',
+    )
+    remark = forms.CharField(
+        label='补签说明',
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 2, 'placeholder': '例如：线下核验已到场，补录签到。'}),
+    )
+
+    def __init__(self, event, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.event = event
+        self.member_profile = None
+        apply_widget_attrs(self.fields)
+
+    def clean_member_keyword(self):
+        member_keyword = self.cleaned_data['member_keyword'].strip()
+        if not member_keyword:
+            raise forms.ValidationError('请输入队员学号或用户名。')
+        self.member_profile = (
+            MemberProfile.objects.select_related('user')
+            .filter(
+                status=MemberProfile.Status.ACTIVE,
+            )
+            .filter(
+                Q(student_id=member_keyword) | Q(user__username=member_keyword)
+            )
+            .order_by('id')
+            .first()
+        )
+        if self.member_profile is None:
+            raise forms.ValidationError('未找到匹配的队员。')
+        if CheckInRecord.objects.filter(
+            member=self.member_profile,
+            event=self.event,
+            status=CheckInRecord.Status.VALID,
+        ).exists():
+            raise forms.ValidationError('该队员已经存在有效签到记录。')
+        return member_keyword
 
 
 class AdminCreateForm(forms.Form):

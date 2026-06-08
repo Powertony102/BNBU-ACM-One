@@ -26,6 +26,10 @@
             <strong>{{ active_members }}</strong>
             <span>活跃队员</span>
         </div>
+        <div class="stat-chip">
+            <strong>{{ pending_application_count }}</strong>
+            <span>待审核活动申请</span>
+        </div>
     </div>
 
     <div class="quick-links">
@@ -54,6 +58,13 @@
                     <div class="event-item-meta">今天新增的有效签到记录。</div>
                 </div>
                 <div class="kpi">{{ today_checkin_count }}</div>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">待审核申请</div>
+                    <div class="event-item-meta">成员提交后等待管理员审批的活动数量。</div>
+                </div>
+                <div class="kpi">{{ pending_application_count }}</div>
             </div>
         </div>
     </article>

@@ -7,13 +7,16 @@
 {% block content %}
 <section class="page-hero">
     <h2>活动列表</h2>
-    <p>你可以在这里查看近期活动，并进入详情页完成签到。</p>
+    <p>你可以在这里查看近期活动，也可以提交自己想组织的 lecture / 分享会申请；审核通过后，你将获得该活动的签到管理权限。</p>
+    <div class="toolbar">
+        <a class="button" href="{% url 'member-event-apply' %}">申请活动</a>
+    </div>
 </section>
 
 <section class="card">
     <div class="card-header">
         <h3>全部活动</h3>
-        <span class="card-meta">按时间排序</span>
+        <span class="card-meta">仅展示已审核通过的活动</span>
     </div>
     <table>
         <thead>
@@ -42,6 +45,52 @@
             {% empty %}
                 <tr>
                     <td colspan="4">暂无活动。</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card" style="margin-top: 18px;">
+    <div class="card-header">
+        <h3>我的活动申请</h3>
+        <span class="card-meta">审核通过后可进入签到管理</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>活动</th>
+                <th>审核状态</th>
+                <th>审核说明</th>
+                <th>签到</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in my_applications %}
+                <tr>
+                    <td>
+                        <div class="table-title">{{ event.title }}</div>
+                        <div class="table-subtitle">{{ event.start_time|date:"Y-m-d H:i" }} · {{ event.location }}</div>
+                    </td>
+                    <td>
+                        <span class="badge {% if event.review_status == 'approved' %}live{% elif event.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                            {{ event.get_review_status_display }}
+                        </span>
+                    </td>
+                    <td>{{ event.review_note|default:"等待审核结果" }}</td>
+                    <td>{{ event.checkin_total }}</td>
+                    <td>
+                        {% if event.review_status == 'approved' %}
+                            <a class="quick-link" href="{% url 'event-detail-manage' event.id %}">签到管理</a>
+                        {% else %}
+                            <span class="muted">审核后开放</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="5">你还没有提交活动申请。</td>
                 </tr>
             {% endfor %}
         </tbody>

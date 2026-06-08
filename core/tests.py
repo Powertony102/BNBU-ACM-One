@@ -350,6 +350,355 @@ class PasswordChangeTests(TestCase):
         self.assertContains(response, '修改密码')
 
 
+class EventApplicationWorkflowTests(TestCase):
+    def setUp(self):
+        self.member_user = User.objects.create_user(
+            username='2430026001',
+            password='MemberPassword2026!',
+            email='u430026001@mail.bnbu.edu.cn',
+            role=User.Roles.MEMBER,
+        )
+        MemberProfile.objects.create(
+            user=self.member_user,
+            real_name='申请队员',
+            student_id='2430026001',
+            email='u430026001@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        self.other_member_user = User.objects.create_user(
+            username='2430026002',
+            password='MemberPassword2026!',
+            email='u430026002@mail.bnbu.edu.cn',
+            role=User.Roles.MEMBER,
+        )
+        MemberProfile.objects.create(
+            user=self.other_member_user,
+            real_name='普通队员',
+            student_id='2430026002',
+            email='u430026002@mail.bnbu.edu.cn',
+            major='DS',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        self.admin_user = User.objects.create_user(
+            username='admin-review',
+            password='AdminPassword2026!',
+            email='admin-review@mail.bnbu.edu.cn',
+            role=User.Roles.ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=self.admin_user,
+            display_name='审核管理员',
+            admin_level=AdminProfile.Level.ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+        self.application_payload = {
+            'title': '队员专题分享',
+            'event_type': Event.EventType.SHARING,
+            'description': '成员申请举办算法专题分享。',
+            'location': 'Lab 405',
+            'start_time': (timezone.now() + timedelta(days=3)).strftime('%Y-%m-%dT%H:%M'),
+            'end_time': (timezone.now() + timedelta(days=3, hours=2)).strftime('%Y-%m-%dT%H:%M'),
+            'checkin_start_time': (timezone.now() + timedelta(days=3, minutes=-15)).strftime('%Y-%m-%dT%H:%M'),
+            'checkin_end_time': (timezone.now() + timedelta(days=3, hours=1)).strftime('%Y-%m-%dT%H:%M'),
+        }
+
+    def create_pending_application(self):
+        return Event.objects.create(
+            title='成员发起活动',
+            event_type=Event.EventType.LECTURE,
+            description='等待审核的活动申请。',
+            location='Room 101',
+            start_time=timezone.now() + timedelta(days=5),
+            end_time=timezone.now() + timedelta(days=5, hours=2),
+            checkin_start_time=timezone.now() + timedelta(days=5, minutes=-20),
+            checkin_end_time=timezone.now() + timedelta(days=5, hours=1),
+            status=Event.Status.DRAFT,
+            applicant=self.member_user,
+            review_status=Event.ReviewStatus.PENDING,
+            created_by=self.member_user,
+        )
+
+    def test_member_can_submit_event_application(self):
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        response = self.client.post(
+            reverse('member-event-apply'),
+            self.application_payload,
+            follow=True,
+        )
+        self.assertRedirects(response, reverse('member-event-list'))
+
+        event = Event.objects.get(title='队员专题分享')
+        self.assertEqual(event.applicant, self.member_user)
+        self.assertEqual(event.created_by, self.member_user)
+        self.assertEqual(event.review_status, Event.ReviewStatus.PENDING)
+        self.assertEqual(event.status, Event.Status.DRAFT)
+        self.assertContains(response, '队员专题分享')
+        self.assertContains(response, '待审核')
+
+    def test_admin_approval_grants_event_scoped_checkin_management(self):
+        event = self.create_pending_application()
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('event-review', args=[event.id]),
+            {
+                'review_note': '可以开展，按计划执行。',
+                'decision': 'approve',
+            },
+            follow=True,
+        )
+        self.assertRedirects(response, reverse('event-detail-manage', args=[event.id]))
+
+        event.refresh_from_db()
+        self.assertEqual(event.review_status, Event.ReviewStatus.APPROVED)
+        self.assertEqual(event.status, Event.Status.PUBLISHED)
+        self.assertEqual(event.reviewed_by, self.admin_user)
+        self.assertQuerysetEqual(
+            event.checkin_managers.order_by('id'),
+            [self.member_user],
+            transform=lambda user: user,
+        )
+        self.assertIsNotNone(event.published_at)
+
+        self.client.logout()
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+
+        detail_response = self.client.get(reverse('event-detail-manage', args=[event.id]))
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(detail_response, '签到入口')
+
+        qr_response = self.client.post(reverse('event-generate-qr', args=[event.id]), follow=True)
+        self.assertRedirects(qr_response, reverse('event-detail-manage', args=[event.id]))
+        event.refresh_from_db()
+        self.assertEqual(event.qr_codes.count(), 1)
+
+        edit_response = self.client.get(reverse('event-edit', args=[event.id]))
+        self.assertEqual(edit_response.status_code, 403)
+
+    def test_non_applicant_member_cannot_access_event_scoped_checkin_management(self):
+        event = self.create_pending_application()
+        event.review_status = Event.ReviewStatus.APPROVED
+        event.status = Event.Status.PUBLISHED
+        event.reviewed_by = self.admin_user
+        event.reviewed_at = timezone.now()
+        event.published_at = timezone.now()
+        event.save(
+            update_fields=[
+                'review_status',
+                'status',
+                'reviewed_by',
+                'reviewed_at',
+                'published_at',
+                'updated_at',
+            ]
+        )
+
+        self.client.login(username='2430026002', password='MemberPassword2026!')
+        response = self.client.get(reverse('event-detail-manage', args=[event.id]))
+        self.assertEqual(response.status_code, 403)
+        manual_response = self.client.post(
+            reverse('event-manual-checkin', args=[event.id]),
+            {
+                'member_keyword': '2430026002',
+                'remark': '尝试越权补签',
+            },
+        )
+        self.assertEqual(manual_response.status_code, 403)
+
+    def test_rejected_application_does_not_grant_checkin_management(self):
+        event = self.create_pending_application()
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        self.client.post(
+            reverse('event-review', args=[event.id]),
+            {
+                'review_note': '时间安排不够清晰，请补充后再申请。',
+                'decision': 'reject',
+            },
+            follow=True,
+        )
+
+        event.refresh_from_db()
+        self.assertEqual(event.review_status, Event.ReviewStatus.REJECTED)
+
+        self.client.logout()
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        response = self.client.get(reverse('event-detail-manage', args=[event.id]))
+        self.assertEqual(response.status_code, 403)
+
+        list_response = self.client.get(reverse('member-event-list'))
+        self.assertContains(list_response, '已驳回')
+        self.assertContains(list_response, '时间安排不够清晰，请补充后再申请。')
+
+    def test_approved_applicant_can_manual_checkin_and_revoke(self):
+        event = self.create_pending_application()
+        event.review_status = Event.ReviewStatus.APPROVED
+        event.status = Event.Status.PUBLISHED
+        event.reviewed_by = self.admin_user
+        event.reviewed_at = timezone.now()
+        event.published_at = timezone.now()
+        event.save(
+            update_fields=[
+                'review_status',
+                'status',
+                'reviewed_by',
+                'reviewed_at',
+                'published_at',
+                'updated_at',
+            ]
+        )
+
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        manual_response = self.client.post(
+            reverse('event-manual-checkin', args=[event.id]),
+            {
+                'member_keyword': '2430026002',
+                'remark': '线下已确认到场。',
+            },
+            follow=True,
+        )
+        self.assertRedirects(manual_response, reverse('event-detail-manage', args=[event.id]))
+
+        checkin = CheckInRecord.objects.get(event=event, member__user=self.other_member_user)
+        self.assertEqual(checkin.checkin_method, CheckInRecord.Method.MANUAL)
+        self.assertEqual(checkin.status, CheckInRecord.Status.VALID)
+        self.assertEqual(checkin.created_by, self.member_user)
+        self.assertEqual(checkin.remark, '线下已确认到场。')
+        self.assertContains(manual_response, '完整签到名单')
+        self.assertContains(manual_response, '线下已确认到场。')
+
+        revoke_response = self.client.post(
+            reverse('event-revoke-checkin', args=[event.id, checkin.id]),
+            follow=True,
+        )
+        self.assertRedirects(revoke_response, reverse('event-detail-manage', args=[event.id]))
+        checkin.refresh_from_db()
+        self.assertEqual(checkin.status, CheckInRecord.Status.REVOKED)
+        self.assertContains(revoke_response, '已撤销')
+
+    def test_admin_created_event_can_assign_member_checkin_manager(self):
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('event-create'),
+            {
+                'title': '管理员创建活动',
+                'event_type': Event.EventType.TRAINING,
+                'description': '管理员创建并指定成员代管。',
+                'location': 'Lab 501',
+                'start_time': (timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M'),
+                'end_time': (timezone.now() + timedelta(days=2, hours=2)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_start_time': (timezone.now() + timedelta(days=2, minutes=-10)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_end_time': (timezone.now() + timedelta(days=2, hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_managers': [str(self.member_user.id), str(self.other_member_user.id)],
+                'status': Event.Status.PUBLISHED,
+            },
+            follow=True,
+        )
+        event = Event.objects.get(title='管理员创建活动')
+        self.assertRedirects(response, reverse('event-detail-manage', args=[event.id]))
+        self.assertQuerysetEqual(
+            event.checkin_managers.order_by('id'),
+            [self.member_user, self.other_member_user],
+            transform=lambda user: user,
+        )
+        self.assertEqual(event.review_status, Event.ReviewStatus.APPROVED)
+        self.assertContains(response, '签到管理员')
+        self.assertContains(response, '申请队员')
+        self.assertContains(response, '普通队员')
+
+        self.client.logout()
+        self.client.login(username='2430026002', password='MemberPassword2026!')
+        detail_response = self.client.get(reverse('event-detail-manage', args=[event.id]))
+        self.assertEqual(detail_response.status_code, 200)
+
+        qr_response = self.client.post(reverse('event-generate-qr', args=[event.id]), follow=True)
+        self.assertRedirects(qr_response, reverse('event-detail-manage', args=[event.id]))
+        event.refresh_from_db()
+        self.assertEqual(event.qr_codes.count(), 1)
+
+        edit_response = self.client.get(reverse('event-edit', args=[event.id]))
+        self.assertEqual(edit_response.status_code, 403)
+
+    def test_event_form_rejects_more_than_five_checkin_managers(self):
+        extra_members = []
+        for index in range(3, 8):
+            user = User.objects.create_user(
+                username=f'24300260{index:02d}',
+                password='MemberPassword2026!',
+                email=f'u4300260{index:02d}@mail.bnbu.edu.cn',
+                role=User.Roles.MEMBER,
+            )
+            MemberProfile.objects.create(
+                user=user,
+                real_name=f'扩展队员{index}',
+                student_id=f'24300260{index:02d}',
+                email=f'u4300260{index:02d}@mail.bnbu.edu.cn',
+                major='CST',
+                enrollment_year=2024,
+                status=MemberProfile.Status.ACTIVE,
+            )
+            extra_members.append(user)
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('event-create'),
+            {
+                'title': '超限管理员活动',
+                'event_type': Event.EventType.TRAINING,
+                'description': '测试签到管理员上限。',
+                'location': 'Lab 601',
+                'start_time': (timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M'),
+                'end_time': (timezone.now() + timedelta(days=2, hours=2)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_start_time': (timezone.now() + timedelta(days=2, minutes=-10)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_end_time': (timezone.now() + timedelta(days=2, hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_managers': [
+                    str(self.member_user.id),
+                    str(self.other_member_user.id),
+                    *(str(user.id) for user in extra_members),
+                ],
+                'status': Event.Status.PUBLISHED,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '签到管理员最多只能指定 5 名。')
+        self.assertFalse(Event.objects.filter(title='超限管理员活动').exists())
+
+    def test_admin_can_soft_delete_existing_event(self):
+        event = Event.objects.create(
+            title='待删除活动',
+            event_type=Event.EventType.OTHER,
+            description='用于测试删除。',
+            location='Lab 204',
+            start_time=timezone.now() + timedelta(days=4),
+            end_time=timezone.now() + timedelta(days=4, hours=2),
+            checkin_start_time=timezone.now() + timedelta(days=4, minutes=-15),
+            checkin_end_time=timezone.now() + timedelta(days=4, hours=1),
+            status=Event.Status.PUBLISHED,
+            created_by=self.admin_user,
+            reviewed_by=self.admin_user,
+            reviewed_at=timezone.now(),
+            published_at=timezone.now(),
+        )
+        event.checkin_managers.add(self.other_member_user)
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.post(reverse('event-delete', args=[event.id]), follow=True)
+        self.assertRedirects(response, reverse('event-list-manage'))
+
+        event.refresh_from_db()
+        self.assertEqual(event.status, Event.Status.CANCELED)
+        self.assertContains(response, '活动已删除')
+
+        self.client.logout()
+        self.client.login(username='2430026002', password='MemberPassword2026!')
+        detail_response = self.client.get(reverse('event-detail-manage', args=[event.id]))
+        self.assertEqual(detail_response.status_code, 403)
+
+
 class BootstrapDemoCommandTests(TestCase):
     def test_bootstrap_demo_sets_user_email_for_seed_accounts(self):
         call_command('bootstrap_demo')

@@ -19,8 +19,11 @@ import qrcode
 from .forms import (
     AdminCreateForm,
     AdminUpdateForm,
+    EventApplicationForm,
     EventForm,
+    EventReviewForm,
     LoginForm,
+    ManualCheckInForm,
     MemberProfileForm,
     MemberRegistrationForm,
     PasswordChangeConfirmForm,
@@ -185,6 +188,28 @@ def require_management(user):
 
 def require_super_admin(user):
     return user.is_authenticated and user.role == User.Roles.SUPER_ADMIN
+
+
+def can_review_event_application(user, event):
+    return require_management(user) and event.is_member_application()
+
+
+def can_edit_event(user):
+    return require_management(user)
+
+
+def build_checkin_manager_choices(queryset):
+    return [
+        {
+            'id': user.id,
+            'username': user.username,
+            'real_name': user.member_profile.real_name,
+            'student_id': user.member_profile.student_id,
+            'email': user.member_profile.email or user.email,
+            'major': user.member_profile.major,
+        }
+        for user in queryset
+    ]
 
 
 def login_view(request):
@@ -375,7 +400,10 @@ def member_dashboard(request):
     profile = get_object_or_404(MemberProfile, user=request.user)
     window_days, window_start = get_star_window()
     star_snapshot = build_member_star_snapshot(profile, window_days=window_days, window_start=window_start)
-    recent_events = Event.objects.filter(status=Event.Status.PUBLISHED).order_by('start_time')[:5]
+    recent_events = (
+        Event.objects.filter(review_status=Event.ReviewStatus.APPROVED, status=Event.Status.PUBLISHED)
+        .order_by('start_time')[:5]
+    )
     context = {
         'profile': profile,
         'star_lit': star_snapshot['lit'],
@@ -384,6 +412,10 @@ def member_dashboard(request):
         'recent_checkins': star_snapshot['recent_checkins'],
         'upcoming_events': recent_events,
         'checkin_count': profile.checkins.filter(status=CheckInRecord.Status.VALID).count(),
+        'managed_event_total': Event.objects.filter(
+            applicant=request.user,
+            review_status=Event.ReviewStatus.APPROVED,
+        ).count(),
     }
     return render(request, 'core/member/dashboard.html', context)
 
@@ -392,15 +424,56 @@ def member_dashboard(request):
 def member_event_list(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
-    events = Event.objects.exclude(status=Event.Status.CANCELED).order_by('start_time')
-    return render(request, 'core/member/event_list.html', {'events': events})
+    events = (
+        Event.objects.filter(review_status=Event.ReviewStatus.APPROVED)
+        .exclude(status=Event.Status.CANCELED)
+        .order_by('start_time')
+    )
+    my_applications = (
+        Event.objects.filter(applicant=request.user)
+        .annotate(checkin_total=Count('checkins'))
+        .order_by('-created_at')
+    )
+    return render(
+        request,
+        'core/member/event_list.html',
+        {
+            'events': events,
+            'my_applications': my_applications,
+        },
+    )
+
+
+@login_required
+def member_event_apply(request):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    form = EventApplicationForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        event = form.save(commit=False)
+        event.created_by = request.user
+        event.applicant = request.user
+        event.review_status = Event.ReviewStatus.PENDING
+        event.status = Event.Status.DRAFT
+        event.save()
+        log_action(request.user, 'submit_event_application', 'Event', event.id)
+        messages.success(request, '活动申请已提交，等待管理员审核。')
+        return redirect('member-event-list')
+    return render(
+        request,
+        'core/member/event_application_form.html',
+        {
+            'form': form,
+            'page_title': '申请活动',
+        },
+    )
 
 
 @login_required
 def member_event_detail(request, event_id):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
-    event = get_object_or_404(Event, pk=event_id)
+    event = get_object_or_404(Event.objects.filter(review_status=Event.ReviewStatus.APPROVED), pk=event_id)
     profile = get_object_or_404(MemberProfile, user=request.user)
     existing_checkin = CheckInRecord.objects.filter(
         member=profile,
@@ -424,7 +497,7 @@ def member_event_checkin(request, event_id):
         return HttpResponseForbidden('仅队员可访问。')
     if request.method != 'POST':
         return HttpResponseForbidden('仅支持 POST 签到。')
-    event = get_object_or_404(Event, pk=event_id)
+    event = get_object_or_404(Event.objects.filter(review_status=Event.ReviewStatus.APPROVED), pk=event_id)
     profile = get_object_or_404(MemberProfile, user=request.user)
     if not event.is_checkin_open():
         messages.error(request, '当前活动未开放签到。')
@@ -503,6 +576,7 @@ def management_dashboard(request):
     lit_members = star_holders.count()
     context = {
         'recent_event_count': Event.objects.filter(start_time__gte=now).count(),
+        'pending_application_count': Event.objects.filter(review_status=Event.ReviewStatus.PENDING).count(),
         'today_checkin_count': CheckInRecord.objects.filter(
             status=CheckInRecord.Status.VALID,
             checkin_time__gte=today_start,
@@ -565,8 +639,19 @@ def star_analytics(request):
 def event_list_manage(request):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
-    events = Event.objects.annotate(checkin_total=Count('checkins')).order_by('start_time')
-    return render(request, 'core/management/event_list.html', {'events': events})
+    events = (
+        Event.objects.select_related('applicant', 'reviewed_by').prefetch_related('checkin_managers__member_profile')
+        .annotate(checkin_total=Count('checkins'))
+        .order_by('review_status', 'start_time')
+    )
+    return render(
+        request,
+        'core/management/event_list.html',
+        {
+            'events': events,
+            'pending_application_total': sum(1 for event in events if event.review_status == Event.ReviewStatus.PENDING),
+        },
+    )
 
 
 @login_required
@@ -577,40 +662,72 @@ def event_create(request):
     if request.method == 'POST' and form.is_valid():
         event = form.save(commit=False)
         event.created_by = request.user
+        event.review_status = Event.ReviewStatus.APPROVED
+        event.reviewed_by = request.user
+        event.reviewed_at = timezone.now()
         if event.status == Event.Status.PUBLISHED and not event.published_at:
             event.published_at = timezone.now()
         event.save()
+        form.save_m2m()
         log_action(request.user, 'create_event', 'Event', event.id)
         messages.success(request, '活动已创建。')
         return redirect('event-detail-manage', event_id=event.id)
-    return render(request, 'core/management/event_form.html', {'form': form, 'page_title': '创建活动'})
+    return render(
+        request,
+        'core/management/event_form.html',
+        {
+            'form': form,
+            'page_title': '创建活动',
+            'checkin_manager_choices': build_checkin_manager_choices(form.fields['checkin_managers'].queryset),
+            'selected_checkin_manager_ids': form['checkin_managers'].value() or [],
+        },
+    )
 
 
 @login_required
 def event_edit(request, event_id):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
-    event = get_object_or_404(Event, pk=event_id)
+    event = get_object_or_404(Event.objects.prefetch_related('checkin_managers__member_profile'), pk=event_id)
     form = EventForm(request.POST or None, instance=event)
     if request.method == 'POST' and form.is_valid():
         event = form.save(commit=False)
         if event.status == Event.Status.PUBLISHED and not event.published_at:
             event.published_at = timezone.now()
         event.save()
+        form.save_m2m()
         log_action(request.user, 'edit_event', 'Event', event.id)
         messages.success(request, '活动已更新。')
         return redirect('event-detail-manage', event_id=event.id)
-    return render(request, 'core/management/event_form.html', {'form': form, 'page_title': '编辑活动'})
+    return render(
+        request,
+        'core/management/event_form.html',
+        {
+            'form': form,
+            'page_title': '编辑活动',
+            'checkin_manager_choices': build_checkin_manager_choices(form.fields['checkin_managers'].queryset),
+            'selected_checkin_manager_ids': form['checkin_managers'].value() or [],
+        },
+    )
 
 
 @login_required
 def event_detail_manage(request, event_id):
-    if not require_management(request.user):
-        return HttpResponseForbidden('仅管理员可访问。')
-    event = get_object_or_404(Event, pk=event_id)
+    event = get_object_or_404(
+        Event.objects.select_related('applicant', 'reviewed_by', 'created_by').prefetch_related('checkin_managers__member_profile'),
+        pk=event_id,
+    )
+    if not event.can_manage_checkin(request.user):
+        return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可访问。')
     qr_code = event.qr_codes.filter(is_active=True).first()
-    valid_checkins = event.checkins.filter(status=CheckInRecord.Status.VALID).select_related('member')
+    all_checkins = (
+        event.checkins.select_related('member', 'created_by')
+        .order_by('-checkin_time', '-created_at')
+    )
+    valid_checkins = all_checkins.filter(status=CheckInRecord.Status.VALID)
     qr_code_image = build_qr_data_uri(qr_code.url) if qr_code and qr_code.url else None
+    can_full_edit = can_edit_event(request.user)
+    can_review = can_review_event_application(request.user, event) and event.review_status != Event.ReviewStatus.APPROVED
     return render(
         request,
         'core/management/event_detail.html',
@@ -618,8 +735,16 @@ def event_detail_manage(request, event_id):
             'event': event,
             'qr_code': qr_code,
             'qr_code_image': qr_code_image,
-            'valid_checkins': valid_checkins[:10],
+            'all_checkins': all_checkins,
             'checkin_total': valid_checkins.count(),
+            'revoked_checkin_total': all_checkins.filter(status=CheckInRecord.Status.REVOKED).count(),
+            'can_edit_event': can_full_edit,
+            'can_publish_event': can_full_edit and event.review_status == Event.ReviewStatus.APPROVED,
+            'can_delete_event': can_full_edit,
+            'can_manage_checkin': event.can_manage_checkin(request.user),
+            'can_review_event': can_review,
+            'review_form': EventReviewForm(initial={'review_note': event.review_note}),
+            'manual_checkin_form': ManualCheckInForm(event),
         },
     )
 
@@ -629,6 +754,9 @@ def event_publish(request, event_id):
     if not require_management(request.user) or request.method != 'POST':
         return HttpResponseForbidden('无权操作。')
     event = get_object_or_404(Event, pk=event_id)
+    if event.review_status != Event.ReviewStatus.APPROVED:
+        messages.error(request, '请先完成活动审核，再发布活动。')
+        return redirect('event-detail-manage', event_id=event.id)
     event.status = Event.Status.PUBLISHED
     event.published_at = timezone.now()
     event.save(update_fields=['status', 'published_at', 'updated_at'])
@@ -638,10 +766,28 @@ def event_publish(request, event_id):
 
 
 @login_required
-def event_close_checkin(request, event_id):
+def event_delete(request, event_id):
     if not require_management(request.user) or request.method != 'POST':
         return HttpResponseForbidden('无权操作。')
     event = get_object_or_404(Event, pk=event_id)
+    if event.status == Event.Status.CANCELED:
+        messages.warning(request, '该活动已经删除过了。')
+        return redirect('event-list-manage')
+    event.status = Event.Status.CANCELED
+    event.qr_codes.filter(is_active=True).update(is_active=False)
+    event.save(update_fields=['status', 'updated_at'])
+    log_action(request.user, 'delete_event', 'Event', event.id)
+    messages.success(request, '活动已删除，并标记为已作废。')
+    return redirect('event-list-manage')
+
+
+@login_required
+def event_close_checkin(request, event_id):
+    if request.method != 'POST':
+        return HttpResponseForbidden('无权操作。')
+    event = get_object_or_404(Event, pk=event_id)
+    if not event.can_manage_checkin(request.user):
+        return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
     event.status = Event.Status.CHECKIN_CLOSED
     event.save(update_fields=['status', 'updated_at'])
     log_action(request.user, 'close_checkin', 'Event', event.id)
@@ -651,9 +797,11 @@ def event_close_checkin(request, event_id):
 
 @login_required
 def generate_qr_entry(request, event_id):
-    if not require_management(request.user) or request.method != 'POST':
+    if request.method != 'POST':
         return HttpResponseForbidden('无权操作。')
     event = get_object_or_404(Event, pk=event_id)
+    if not event.can_manage_checkin(request.user):
+        return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
     event.qr_codes.filter(is_active=True).update(is_active=False)
     minutes = int(SystemSetting.get_value('qr_code_expire_minutes', '120'))
     qr_code = EventQRCode.objects.create(
@@ -665,6 +813,128 @@ def generate_qr_entry(request, event_id):
     qr_code.save(update_fields=['url'])
     log_action(request.user, 'generate_qr', 'EventQRCode', qr_code.id, f'event={event.id}')
     messages.success(request, '活动签到入口已生成。')
+    return redirect('event-detail-manage', event_id=event.id)
+
+
+@login_required
+def event_manual_checkin(request, event_id):
+    if request.method != 'POST':
+        return HttpResponseForbidden('无权操作。')
+    event = get_object_or_404(Event, pk=event_id)
+    if not event.can_manage_checkin(request.user):
+        return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
+    form = ManualCheckInForm(event, request.POST)
+    if not form.is_valid():
+        messages.error(request, '补签失败，请检查队员信息。')
+        for field_errors in form.errors.values():
+            for error in field_errors:
+                messages.error(request, error)
+        return redirect('event-detail-manage', event_id=event.id)
+    checkin = CheckInRecord.objects.create(
+        member=form.member_profile,
+        event=event,
+        checkin_method=CheckInRecord.Method.MANUAL,
+        remark=form.cleaned_data['remark'],
+        created_by=request.user,
+    )
+    log_action(
+        request.user,
+        'manual_checkin',
+        'Event',
+        event.id,
+        f'checkin_id={checkin.id};member={form.member_profile.student_id}',
+    )
+    messages.success(request, '已完成手动补签。')
+    return redirect('event-detail-manage', event_id=event.id)
+
+
+@login_required
+def event_revoke_checkin(request, event_id, checkin_id):
+    if request.method != 'POST':
+        return HttpResponseForbidden('无权操作。')
+    event = get_object_or_404(Event, pk=event_id)
+    if not event.can_manage_checkin(request.user):
+        return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
+    checkin = get_object_or_404(
+        CheckInRecord.objects.select_related('member'),
+        pk=checkin_id,
+        event=event,
+    )
+    if checkin.status == CheckInRecord.Status.REVOKED:
+        messages.warning(request, '这条签到已经撤销过了。')
+        return redirect('event-detail-manage', event_id=event.id)
+    checkin.status = CheckInRecord.Status.REVOKED
+    if not checkin.remark:
+        checkin.remark = '由签到管理员撤销。'
+    checkin.save(update_fields=['status', 'remark', 'updated_at'])
+    log_action(
+        request.user,
+        'revoke_checkin',
+        'CheckInRecord',
+        checkin.id,
+        f'event={event.id};member={checkin.member.student_id}',
+    )
+    messages.success(request, '签到记录已撤销。')
+    return redirect('event-detail-manage', event_id=event.id)
+
+
+@login_required
+def event_review(request, event_id):
+    if request.method != 'POST':
+        return HttpResponseForbidden('无权操作。')
+    event = get_object_or_404(Event, pk=event_id)
+    if not can_review_event_application(request.user, event):
+        return HttpResponseForbidden('仅管理员可审核成员活动申请。')
+    form = EventReviewForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, '审核说明提交失败，请重试。')
+        return redirect('event-detail-manage', event_id=event.id)
+
+    decision = request.POST.get('decision')
+    if decision not in {'approve', 'reject'}:
+        messages.error(request, '无效的审核操作。')
+        return redirect('event-detail-manage', event_id=event.id)
+
+    event.review_note = form.cleaned_data['review_note']
+    event.reviewed_by = request.user
+    event.reviewed_at = timezone.now()
+    if decision == 'approve':
+        event.review_status = Event.ReviewStatus.APPROVED
+        if event.status == Event.Status.DRAFT:
+            event.status = Event.Status.PUBLISHED
+        if not event.published_at:
+            event.published_at = timezone.now()
+        event.save(
+            update_fields=[
+                'review_note',
+                'reviewed_by',
+                'reviewed_at',
+                'review_status',
+                'status',
+                'published_at',
+                'updated_at',
+            ]
+        )
+        if event.applicant_id and not event.checkin_managers.filter(id=event.applicant_id).exists():
+            event.checkin_managers.add(event.applicant_id)
+        log_action(request.user, 'approve_event_application', 'Event', event.id)
+        messages.success(request, '活动申请已通过，申请人现在可以管理该活动的签到。')
+    else:
+        event.review_status = Event.ReviewStatus.REJECTED
+        if event.status == Event.Status.PUBLISHED:
+            event.status = Event.Status.DRAFT
+        event.save(
+            update_fields=[
+                'review_note',
+                'reviewed_by',
+                'reviewed_at',
+                'review_status',
+                'status',
+                'updated_at',
+            ]
+        )
+        log_action(request.user, 'reject_event_application', 'Event', event.id)
+        messages.success(request, '活动申请已驳回。')
     return redirect('event-detail-manage', event_id=event.id)
 
 

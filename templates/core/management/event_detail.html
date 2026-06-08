@@ -5,7 +5,15 @@
 {% block topbar_subtitle %}<div class="topbar-subtitle">{{ event.title }}</div>{% endblock %}
 
 {% block topbar_actions %}
-    <a class="button ghost" href="{% url 'event-edit' event.id %}">编辑活动</a>
+    {% if can_edit_event %}
+        <a class="button ghost" href="{% url 'event-edit' event.id %}">编辑活动</a>
+    {% endif %}
+    {% if can_delete_event and event.status != 'canceled' %}
+        <form method="post" action="{% url 'event-delete' event.id %}" onsubmit="return confirm('确认删除这场活动吗？系统会将其标记为已作废。');">
+            {% csrf_token %}
+            <button class="button subtle" type="submit">删除活动</button>
+        </form>
+    {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -13,22 +21,24 @@
     <h2>{{ event.title }}</h2>
     <p>{{ event.description|default:"这场活动暂时还没有描述。" }}</p>
     <div class="toolbar">
-        {% if event.status != 'published' %}
+        {% if can_publish_event and event.status != 'published' %}
             <form method="post" action="{% url 'event-publish' event.id %}">
                 {% csrf_token %}
                 <button type="submit">发布活动</button>
             </form>
         {% endif %}
-        {% if event.status == 'published' %}
+        {% if can_manage_checkin and event.status == 'published' %}
             <form method="post" action="{% url 'event-close-checkin' event.id %}">
                 {% csrf_token %}
                 <button class="button subtle" type="submit">关闭签到</button>
             </form>
         {% endif %}
-        <form method="post" action="{% url 'event-generate-qr' event.id %}">
-            {% csrf_token %}
-            <button class="button secondary" type="submit">生成签到入口</button>
-        </form>
+        {% if can_manage_checkin %}
+            <form method="post" action="{% url 'event-generate-qr' event.id %}">
+                {% csrf_token %}
+                <button class="button secondary" type="submit">生成签到入口</button>
+            </form>
+        {% endif %}
     </div>
 </section>
 
@@ -43,6 +53,32 @@
             <div><strong>地点：</strong><span class="muted">{{ event.location }}</span></div>
             <div><strong>活动时间：</strong><span class="muted">{{ event.start_time|date:"Y-m-d H:i" }} - {{ event.end_time|date:"Y-m-d H:i" }}</span></div>
             <div><strong>签到时间：</strong><span class="muted">{{ event.checkin_start_time|date:"Y-m-d H:i" }} - {{ event.checkin_end_time|date:"Y-m-d H:i" }}</span></div>
+            <div><strong>审核状态：</strong><span class="badge {% if event.review_status == 'approved' %}live{% elif event.review_status == 'pending' %}warn{% else %}dim{% endif %}">{{ event.get_review_status_display }}</span></div>
+            <div>
+                <strong>申请人：</strong>
+                <span class="muted">
+                    {% if event.applicant %}
+                        {{ event.applicant.member_profile.real_name|default:event.applicant.username }}
+                    {% else %}
+                        后台创建
+                    {% endif %}
+                </span>
+            </div>
+            <div>
+                <strong>签到管理员：</strong>
+                <span class="muted">{{ event.checkin_manager_display }}</span>
+            </div>
+            <div>
+                <strong>审核人：</strong>
+                <span class="muted">
+                    {% if event.reviewed_by %}
+                        {{ event.reviewed_by.admin_profile.display_name|default:event.reviewed_by.username }}
+                    {% else %}
+                        暂未审核
+                    {% endif %}
+                </span>
+            </div>
+            <div><strong>审核说明：</strong><span class="muted">{{ event.review_note|default:"暂无" }}</span></div>
         </div>
     </article>
 
@@ -69,10 +105,43 @@
     </article>
 </section>
 
+{% if can_manage_checkin %}
+    <section class="card" style="margin-top: 18px;">
+        <div class="card-header">
+            <h3>手动补签</h3>
+            <span class="card-meta">管理员、活动申请人或已指定签到管理员可操作</span>
+        </div>
+        <form method="post" action="{% url 'event-manual-checkin' event.id %}">
+            {% csrf_token %}
+            {{ manual_checkin_form.as_p }}
+            <div class="inline-actions">
+                <button type="submit">补签入库</button>
+            </div>
+        </form>
+    </section>
+{% endif %}
+
+{% if can_review_event %}
+    <section class="card" style="margin-top: 18px;">
+        <div class="card-header">
+            <h3>活动申请审核</h3>
+            <span class="card-meta">审核通过后自动开放该活动签到管理</span>
+        </div>
+        <form method="post" action="{% url 'event-review' event.id %}">
+            {% csrf_token %}
+            {{ review_form.as_p }}
+            <div class="inline-actions">
+                <button type="submit" name="decision" value="approve">审核通过</button>
+                <button class="button subtle" type="submit" name="decision" value="reject">驳回申请</button>
+            </div>
+        </form>
+    </section>
+{% endif %}
+
 <section class="card" style="margin-top: 18px;">
     <div class="card-header">
-        <h3>最近签到记录</h3>
-        <span class="pill">有效签到 {{ checkin_total }} 人</span>
+        <h3>完整签到名单</h3>
+        <span class="pill">有效签到 {{ checkin_total }} 人 / 已撤销 {{ revoked_checkin_total }} 条</span>
     </div>
     <table>
         <thead>
@@ -80,18 +149,37 @@
                 <th>队员</th>
                 <th>时间</th>
                 <th>方式</th>
+                <th>状态</th>
+                <th>备注</th>
+                <th>操作</th>
             </tr>
         </thead>
         <tbody>
-            {% for checkin in valid_checkins %}
+            {% for checkin in all_checkins %}
                 <tr>
                     <td>{{ checkin.member.real_name }}</td>
                     <td>{{ checkin.checkin_time|date:"Y-m-d H:i" }}</td>
                     <td>{{ checkin.get_checkin_method_display }}</td>
+                    <td>
+                        <span class="badge {% if checkin.status == 'valid' %}live{% else %}dim{% endif %}">
+                            {{ checkin.get_status_display }}
+                        </span>
+                    </td>
+                    <td>{{ checkin.remark|default:"-" }}</td>
+                    <td>
+                        {% if can_manage_checkin and checkin.status == 'valid' %}
+                            <form method="post" action="{% url 'event-revoke-checkin' event.id checkin.id %}">
+                                {% csrf_token %}
+                                <button class="button subtle" type="submit">撤销</button>
+                            </form>
+                        {% else %}
+                            <span class="muted">-</span>
+                        {% endif %}
+                    </td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="3">暂时还没有签到记录。</td>
+                    <td colspan="6">暂时还没有签到记录。</td>
                 </tr>
             {% endfor %}
         </tbody>

@@ -927,7 +927,7 @@
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-dashboard' %}active{% endif %}" href="{% url 'member-dashboard' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
                             </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-event-list' or request.resolver_match.url_name == 'member-event-detail' %}active{% endif %}" href="{% url 'member-event-list' %}">
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-event-list' or request.resolver_match.url_name == 'member-event-detail' or request.resolver_match.url_name == 'member-event-apply' %}active{% endif %}" href="{% url 'member-event-list' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>活动</span></span>
                             </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-star-center' %}active{% endif %}" href="{% url 'member-star-center' %}">
@@ -948,7 +948,7 @@
                             <a class="nav-item {% if request.resolver_match.url_name == 'management-dashboard' %}active{% endif %}" href="{% url 'management-dashboard' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
                             </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' %}active{% endif %}" href="{% url 'event-list-manage' %}">
+                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' %}active{% endif %}" href="{% url 'event-list-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>活动管理</span></span>
                             </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'management-star-analytics' %}active{% endif %}" href="{% url 'management-star-analytics' %}">
@@ -971,7 +971,7 @@
                     <div>
                         <div class="nav-group-title">当前能力</div>
                         <div class="nav-list">
-                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' %}active{% endif %}" href="{% url 'event-list-manage' %}">
+                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' %}active{% endif %}" href="{% url 'event-list-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>二维码入口</span></span>
                                 <span class="nav-note">已接通</span>
                             </a>
