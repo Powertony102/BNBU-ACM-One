@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,6 +41,16 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
 ]
+
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
+if RESEND_API_KEY:
+    try:
+        import anymail  # noqa: F401
+    except ModuleNotFoundError as exc:
+        raise ImproperlyConfigured(
+            'RESEND_API_KEY 已配置，但未安装 django-anymail[resend]。'
+        ) from exc
+    INSTALLED_APPS.append('anymail')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -126,6 +138,22 @@ LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
 AUTH_USER_MODEL = 'core.User'
+
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'onboarding@resend.dev')
+PASSWORD_RESET_CODE_TTL_SECONDS = int(os.environ.get('PASSWORD_RESET_CODE_TTL_SECONDS', '600'))
+PASSWORD_RESET_CODE_COOLDOWN_SECONDS = int(os.environ.get('PASSWORD_RESET_CODE_COOLDOWN_SECONDS', '60'))
+PASSWORD_RESET_CODE_MAX_ATTEMPTS = int(os.environ.get('PASSWORD_RESET_CODE_MAX_ATTEMPTS', '5'))
+
+if RESEND_API_KEY:
+    EMAIL_BACKEND = 'anymail.backends.resend.EmailBackend'
+    ANYMAIL = {
+        'RESEND_API_KEY': RESEND_API_KEY,
+    }
+else:
+    EMAIL_BACKEND = os.environ.get(
+        'EMAIL_BACKEND',
+        'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
+    )
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field

@@ -1,9 +1,13 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="zh-Hans">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}One BNBU-ACM{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{% static 'core/images/acm-star-badge.png' %}">
+    <link rel="shortcut icon" type="image/png" href="{% static 'core/images/acm-star-badge.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'core/images/acm-star-badge.png' %}">
     <style>
         :root {
             --background: #f6f7f9;

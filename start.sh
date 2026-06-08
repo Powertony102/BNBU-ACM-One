@@ -3,40 +3,42 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT_DIR"
-
+CONDA_BIN="${CONDA_BIN:-/Users/lixinze/opt/anaconda3/bin/conda}"
+CONDA_ENV="${CONDA_ENV:-asdw}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 
-if [[ -f ".venv/bin/activate" ]]; then
-  # Reuse the project's local virtual environment when it exists.
-  # shellcheck disable=SC1091
-  source ".venv/bin/activate"
-fi
+# Resend configuration.
+# Override these before startup for real email delivery.
+export RESEND_API_KEY="${RESEND_API_KEY:-re_xxx}"
+export DEFAULT_FROM_EMAIL="${DEFAULT_FROM_EMAIL:-no-reply@example.com}"
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="python3"
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN="python"
-else
-  echo "Error: Python is not installed."
+if [[ ! -x "${CONDA_BIN}" ]]; then
+  echo "Conda binary not found at ${CONDA_BIN}" >&2
   exit 1
 fi
 
-if ! "$PYTHON_BIN" -c "import django" >/dev/null 2>&1; then
-  echo "Error: Django is not installed in the current Python environment."
-  echo "Tip: activate your virtual environment first, or install dependencies before running start.sh."
-  exit 1
+if [[ "${RESEND_API_KEY}" == "re_xxx" ]]; then
+  echo "Warning: RESEND_API_KEY is still set to the placeholder value 're_xxx'." >&2
+  echo "Real email delivery will not work until you export a valid key." >&2
 fi
+
+if [[ "${DEFAULT_FROM_EMAIL}" == "no-reply@example.com" ]]; then
+  echo "Warning: DEFAULT_FROM_EMAIL is still using the placeholder address." >&2
+  echo "Please replace it with an address from your verified Resend domain." >&2
+fi
+
+cd "${ROOT_DIR}"
 
 echo "==> Applying database migrations..."
-"$PYTHON_BIN" manage.py migrate
+"${CONDA_BIN}" run -n "${CONDA_ENV}" python manage.py migrate
 
 echo "==> Bootstrapping demo data..."
-"$PYTHON_BIN" manage.py bootstrap_demo
+"${CONDA_BIN}" run -n "${CONDA_ENV}" python manage.py bootstrap_demo
 
-echo "==> Starting development server at http://$HOST:$PORT"
+echo "==> Starting development server at http://${HOST}:${PORT}"
 echo "    Super Admin: superadmin / ACM123456"
 echo "    Member: member01 / ACM123456"
+echo "    From email: ${DEFAULT_FROM_EMAIL}"
 
-exec "$PYTHON_BIN" manage.py runserver "$HOST:$PORT"
+exec "${CONDA_BIN}" run -n "${CONDA_ENV}" python manage.py runserver "${HOST}:${PORT}"

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import AdminProfile, AuditLog, CheckInRecord, Event, EventQRCode, MemberProfile, SystemSetting, User
+from .models import AdminProfile, AuditLog, CheckInRecord, EmailVerificationCode, Event, EventQRCode, MemberProfile, SystemSetting, User
 
 
 @admin.register(User)
@@ -51,3 +51,10 @@ class SystemSettingAdmin(admin.ModelAdmin):
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = ('action', 'target_type', 'target_id', 'operator', 'created_at')
+
+
+@admin.register(EmailVerificationCode)
+class EmailVerificationCodeAdmin(admin.ModelAdmin):
+    list_display = ('user', 'email', 'purpose', 'attempt_count', 'expires_at', 'used_at', 'created_at')
+    list_filter = ('purpose', 'used_at')
+    search_fields = ('user__username', 'email')

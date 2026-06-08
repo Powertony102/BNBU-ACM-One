@@ -2,11 +2,13 @@ import base64
 import math
 from datetime import timedelta
 from io import BytesIO
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
+from django.core.exceptions import ValidationError
 from django.db.models import Count, Max, Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -21,9 +23,12 @@ from .forms import (
     LoginForm,
     MemberProfileForm,
     MemberRegistrationForm,
+    PasswordResetConfirmForm,
+    PasswordResetRequestForm,
     SystemSettingsForm,
 )
 from .models import AdminProfile, AuditLog, CheckInRecord, Event, EventQRCode, MemberProfile, SystemSetting, User
+from .services import invalidate_password_reset_codes, issue_password_reset_code, send_password_reset_code_email, verify_password_reset_code
 
 
 def log_action(operator, action, target_type, target_id=None, detail=''):
@@ -193,6 +198,73 @@ def register_view(request):
         messages.success(request, '注册成功，欢迎加入 One BNBU-ACM。')
         return redirect('member-dashboard')
     return render(request, 'core/register.html', {'form': form})
+
+
+def password_reset_request_view(request):
+    if request.user.is_authenticated:
+        return role_redirect(request.user)
+    form = PasswordResetRequestForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            _, raw_code = issue_password_reset_code(form.user, form.cleaned_data['school_email'])
+            send_password_reset_code_email(form.user, form.cleaned_data['school_email'], raw_code)
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            log_action(
+                form.user,
+                'send_password_reset_code',
+                'User',
+                form.user.id,
+                f'email={form.cleaned_data["school_email"]}',
+            )
+            messages.success(request, '验证码已发送到你的学校邮箱，请查收后完成密码重置。')
+            query = urlencode(
+                {
+                    'username': form.cleaned_data['username'],
+                    'email': form.cleaned_data['school_email'],
+                }
+            )
+            return redirect(f'{reverse("password-reset-confirm")}?{query}')
+    return render(request, 'core/password_reset_request.html', {'form': form})
+
+
+def password_reset_confirm_view(request):
+    if request.user.is_authenticated:
+        return role_redirect(request.user)
+    initial = {
+        'username': request.GET.get('username', ''),
+        'school_email': request.GET.get('email', ''),
+    }
+    form = PasswordResetConfirmForm(request.POST or None, initial=initial)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            verification = verify_password_reset_code(
+                form.user,
+                form.cleaned_data['school_email'],
+                form.cleaned_data['code'],
+            )
+        except ValidationError as exc:
+            form.add_error('code', exc)
+        else:
+            form.user.set_password(form.cleaned_data['password1'])
+            form.user.save(update_fields=['password'])
+            verification.mark_used()
+            invalidate_password_reset_codes(
+                form.user,
+                form.cleaned_data['school_email'],
+                exclude_id=verification.id,
+            )
+            log_action(
+                form.user,
+                'password_reset_by_email_code',
+                'User',
+                form.user.id,
+                f'email={form.cleaned_data["school_email"]}',
+            )
+            messages.success(request, '密码已重置，请使用新密码登录。')
+            return redirect('login')
+    return render(request, 'core/password_reset_confirm.html', {'form': form})
 
 
 @login_required

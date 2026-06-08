@@ -1,10 +1,12 @@
 from datetime import timedelta
+import re
 
+from django.core import mail
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import AdminProfile, CheckInRecord, Event, MemberProfile, User
+from .models import AdminProfile, CheckInRecord, EmailVerificationCode, Event, MemberProfile, User
 
 
 class ACMStarViewsTests(TestCase):
@@ -86,6 +88,19 @@ class ACMStarViewsTests(TestCase):
         self.assertContains(response, 'Pulse')
         self.assertContains(response, '近期点亮记录')
 
+    def test_member_pages_hide_class_name(self):
+        self.client.login(username='member-star', password='ACM123456')
+
+        dashboard_response = self.client.get(reverse('member-dashboard'))
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertNotContains(dashboard_response, 'ACM 2026')
+        self.assertNotContains(dashboard_response, '暂未填写班级')
+
+        profile_response = self.client.get(reverse('member-profile'))
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertNotContains(profile_response, '班级')
+        self.assertNotContains(profile_response, 'class_name')
+
     def test_management_star_analytics_shows_holder_stats(self):
         self.client.login(username='admin-star', password='ACM123456')
         response = self.client.get(reverse('management-star-analytics'))
@@ -153,3 +168,108 @@ class MemberRegistrationTests(TestCase):
         self.assertContains(response, '用户名必须是 10 位纯数字。')
         self.assertContains(response, '学校邮箱必须使用 @mail.bnbu.edu.cn 域名。')
         self.assertFalse(User.objects.filter(username='abc123').exists())
+
+
+class PasswordResetTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='2430026137',
+            password='OldPassword2026!',
+            email='u430026137@mail.bnbu.edu.cn',
+            role=User.Roles.MEMBER,
+        )
+        MemberProfile.objects.create(
+            user=self.user,
+            real_name='刘扬',
+            student_id='2430026137',
+            email='u430026137@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+
+    def test_login_page_exposes_password_reset_entry(self):
+        response = self.client.get(reverse('login'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '通过邮箱验证码找回')
+
+    def test_request_password_reset_code_sends_email_and_creates_record(self):
+        response = self.client.post(
+            reverse('password-reset-request'),
+            {
+                'username': '2430026137',
+                'school_email': 'u430026137@mail.bnbu.edu.cn',
+            },
+            follow=True,
+        )
+        self.assertRedirects(
+            response,
+            reverse('password-reset-confirm') + '?username=2430026137&email=u430026137%40mail.bnbu.edu.cn',
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['u430026137@mail.bnbu.edu.cn'])
+        self.assertIn('密码重置验证码', mail.outbox[0].subject)
+
+        verification = EmailVerificationCode.objects.get(user=self.user)
+        self.assertEqual(verification.purpose, EmailVerificationCode.Purpose.PASSWORD_RESET)
+        self.assertTrue(verification.is_available())
+
+    def test_confirm_password_reset_accepts_valid_code_and_updates_password(self):
+        self.client.post(
+            reverse('password-reset-request'),
+            {
+                'username': '2430026137',
+                'school_email': 'u430026137@mail.bnbu.edu.cn',
+            },
+        )
+        message_body = mail.outbox[0].body
+        code = re.search(r'验证码：(\d{6})', message_body).group(1)
+
+        response = self.client.post(
+            reverse('password-reset-confirm'),
+            {
+                'username': '2430026137',
+                'school_email': 'u430026137@mail.bnbu.edu.cn',
+                'code': code,
+                'password1': 'NewPassword2026!',
+                'password2': 'NewPassword2026!',
+            },
+            follow=True,
+        )
+        self.assertRedirects(response, reverse('login'))
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('NewPassword2026!'))
+        self.assertFalse(self.user.check_password('OldPassword2026!'))
+        self.assertTrue(
+            self.client.login(
+                username='2430026137',
+                password='NewPassword2026!',
+            )
+        )
+        verification = EmailVerificationCode.objects.get(user=self.user)
+        self.assertIsNotNone(verification.used_at)
+
+    def test_confirm_password_reset_rejects_invalid_code(self):
+        self.client.post(
+            reverse('password-reset-request'),
+            {
+                'username': '2430026137',
+                'school_email': 'u430026137@mail.bnbu.edu.cn',
+            },
+        )
+        response = self.client.post(
+            reverse('password-reset-confirm'),
+            {
+                'username': '2430026137',
+                'school_email': 'u430026137@mail.bnbu.edu.cn',
+                'code': '000000',
+                'password1': 'NewPassword2026!',
+                'password2': 'NewPassword2026!',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '验证码不正确。')
+
+        verification = EmailVerificationCode.objects.get(user=self.user)
+        self.assertEqual(verification.attempt_count, 1)

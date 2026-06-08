@@ -20,6 +20,10 @@ def normalize_major_code(value):
     return value.strip().upper()
 
 
+def normalize_school_email(value):
+    return value.strip().lower()
+
+
 def apply_widget_attrs(fields):
     text_like_widgets = (
         forms.TextInput,
@@ -102,7 +106,7 @@ class MemberRegistrationForm(forms.Form):
         return major
 
     def clean_school_email(self):
-        school_email = self.cleaned_data['school_email'].strip().lower()
+        school_email = normalize_school_email(self.cleaned_data['school_email'])
         if not school_email.endswith(SCHOOL_EMAIL_DOMAIN):
             raise forms.ValidationError('学校邮箱必须使用 @mail.bnbu.edu.cn 域名。')
         return school_email
@@ -146,6 +150,121 @@ class MemberRegistrationForm(forms.Form):
         return user
 
 
+class PasswordResetRequestForm(forms.Form):
+    username = forms.CharField(label='用户名', max_length=150)
+    school_email = forms.EmailField(label='学校邮箱')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = None
+        apply_widget_attrs(self.fields)
+        self.fields['username'].widget.attrs['autocomplete'] = 'username'
+        self.fields['school_email'].widget.attrs.update(
+            {
+                'autocomplete': 'email',
+                'placeholder': SCHOOL_EMAIL_EXAMPLE,
+            }
+        )
+        self.fields['school_email'].help_text = '请输入注册时绑定的 @mail.bnbu.edu.cn 邮箱。'
+
+    def clean_school_email(self):
+        school_email = normalize_school_email(self.cleaned_data['school_email'])
+        if not school_email.endswith(SCHOOL_EMAIL_DOMAIN):
+            raise forms.ValidationError('学校邮箱必须使用 @mail.bnbu.edu.cn 域名。')
+        return school_email
+
+    def clean(self):
+        cleaned_data = super().clean()
+        username = cleaned_data.get('username', '').strip()
+        school_email = cleaned_data.get('school_email')
+        if not username or not school_email:
+            return cleaned_data
+        self.user = (
+            User.objects.filter(
+                username=username,
+                email__iexact=school_email,
+                is_active=True,
+            )
+            .order_by('id')
+            .first()
+        )
+        if self.user is None:
+            raise forms.ValidationError('未找到匹配的账号与邮箱，请检查后重试。')
+        return cleaned_data
+
+
+class PasswordResetConfirmForm(forms.Form):
+    username = forms.CharField(label='用户名', max_length=150)
+    school_email = forms.EmailField(label='学校邮箱')
+    code = forms.CharField(label='邮箱验证码', max_length=6)
+    password1 = forms.CharField(label='新密码', widget=forms.PasswordInput)
+    password2 = forms.CharField(label='确认新密码', widget=forms.PasswordInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = None
+        apply_widget_attrs(self.fields)
+        self.fields['username'].widget.attrs['autocomplete'] = 'username'
+        self.fields['school_email'].widget.attrs.update(
+            {
+                'autocomplete': 'email',
+                'placeholder': SCHOOL_EMAIL_EXAMPLE,
+            }
+        )
+        self.fields['code'].widget.attrs.update(
+            {
+                'autocomplete': 'one-time-code',
+                'inputmode': 'numeric',
+                'pattern': r'\d{6}',
+                'maxlength': 6,
+                'placeholder': '6 位数字验证码',
+            }
+        )
+        self.fields['password1'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['password2'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['school_email'].help_text = '请输入接收验证码的学校邮箱。'
+        self.fields['code'].help_text = '验证码默认 10 分钟内有效。'
+
+    def clean_school_email(self):
+        school_email = normalize_school_email(self.cleaned_data['school_email'])
+        if not school_email.endswith(SCHOOL_EMAIL_DOMAIN):
+            raise forms.ValidationError('学校邮箱必须使用 @mail.bnbu.edu.cn 域名。')
+        return school_email
+
+    def clean_code(self):
+        code = self.cleaned_data['code'].strip()
+        if not re.fullmatch(r'\d{6}', code):
+            raise forms.ValidationError('验证码必须是 6 位数字。')
+        return code
+
+    def clean(self):
+        cleaned_data = super().clean()
+        username = cleaned_data.get('username', '').strip()
+        school_email = cleaned_data.get('school_email')
+        password1 = cleaned_data.get('password1')
+        password2 = cleaned_data.get('password2')
+        if username and school_email:
+            self.user = (
+                User.objects.filter(
+                    username=username,
+                    email__iexact=school_email,
+                    is_active=True,
+                )
+                .order_by('id')
+                .first()
+            )
+            if self.user is None:
+                self.add_error(None, '未找到匹配的账号与邮箱，请检查后重试。')
+        if password1 and password2 and password1 != password2:
+            self.add_error('password2', '两次输入的密码不一致。')
+        if password1 and self.user and not self.errors.get('password2'):
+            try:
+                validate_password(password1, user=self.user)
+            except ValidationError as exc:
+                self.add_error('password1', exc)
+        return cleaned_data
+
+
 class MemberProfileForm(forms.ModelForm):
     email = forms.EmailField(label='学校邮箱')
     major = forms.CharField(label='专业代码', max_length=10)
@@ -153,13 +272,12 @@ class MemberProfileForm(forms.ModelForm):
 
     class Meta:
         model = MemberProfile
-        fields = ['email', 'major', 'enrollment_year', 'phone', 'class_name']
+        fields = ['email', 'major', 'enrollment_year', 'phone']
         labels = {
             'email': '学校邮箱',
             'phone': '手机号',
             'major': '专业代码',
             'enrollment_year': '入学年份',
-            'class_name': '班级',
         }
 
     def __init__(self, *args, **kwargs):
@@ -172,7 +290,7 @@ class MemberProfileForm(forms.ModelForm):
         self.fields['major'].help_text = '请输入英文专业代码，例如 CST 或 DS。'
 
     def clean_email(self):
-        email = self.cleaned_data['email'].strip().lower()
+        email = normalize_school_email(self.cleaned_data['email'])
         if not email.endswith(SCHOOL_EMAIL_DOMAIN):
             raise forms.ValidationError('学校邮箱必须使用 @mail.bnbu.edu.cn 域名。')
         return email

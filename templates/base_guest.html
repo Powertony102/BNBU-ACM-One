@@ -1,9 +1,13 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="zh-Hans">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}One BNBU-ACM{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{% static 'core/images/acm-star-badge.png' %}">
+    <link rel="shortcut icon" type="image/png" href="{% static 'core/images/acm-star-badge.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'core/images/acm-star-badge.png' %}">
     <style>
         :root {
             --background: #f6f7f9;
@@ -33,16 +37,6 @@
                 linear-gradient(180deg, #fafafa 0%, var(--background) 100%);
         }
 
-        .version-pill {
-            padding: 6px 10px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.12);
-            border: 1px solid rgba(255,255,255,0.18);
-            color: rgba(255,255,255,0.82);
-            font-size: 0.78rem;
-            font-weight: 600;
-        }
-
         .auth-shell {
             min-height: 100vh;
             display: grid;
@@ -67,34 +61,41 @@
                 radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 32%),
                 linear-gradient(180deg, #111113, #27272a);
             color: #ffffff;
-        }
-
-        .auth-side h1 {
-            margin: 22px 0 10px;
-            font-size: clamp(2rem, 4vw, 3rem);
-            line-height: 1.04;
-            letter-spacing: -0.04em;
-        }
-
-        .auth-side p {
-            margin: 0;
-            max-width: 420px;
-            color: rgba(255, 255, 255, 0.74);
-            line-height: 1.7;
-        }
-
-        .auth-highlights {
-            margin-top: 28px;
+            position: relative;
             display: grid;
-            gap: 10px;
+            place-items: center;
         }
 
-        .auth-highlight {
-            padding: 12px 14px;
-            border-radius: 16px;
-            background: rgba(255, 255, 255, 0.08);
-            color: rgba(255, 255, 255, 0.88);
+        .auth-side::before {
+            content: "";
+            position: absolute;
+            inset: 22px;
+            border-radius: 24px;
             border: 1px solid rgba(255, 255, 255, 0.08);
+            pointer-events: none;
+        }
+
+        .brand-mark {
+            width: min(280px, 72%);
+            height: auto;
+            filter: drop-shadow(0 22px 42px rgba(0, 0, 0, 0.34));
+        }
+
+        .brand-lockup {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            justify-items: center;
+            gap: 22px;
+            text-align: center;
+        }
+
+        .brand-lockup h1 {
+            margin: 0;
+            font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+            font-weight: 700;
         }
 
         .auth-form {
@@ -238,6 +239,10 @@
             .auth-side {
                 padding: 22px;
             }
+
+            .brand-mark {
+                width: min(220px, 64vw);
+            }
         }
     </style>
 </head>
@@ -245,13 +250,9 @@
     <div class="auth-shell">
         <div class="auth-card">
             <div class="auth-side">
-                <span class="version-pill">One BNBU-ACM</span>
-                <h1>BNBU ACM 活动签到系统</h1>
-                <p>参考你喜欢的校内工具风格，我们把原型收敛成了更安静、更规整的应用界面，适合活动、签到和团队运营场景。</p>
-                <div class="auth-highlights">
-                    <div class="auth-highlight">队员端：看 Star、看活动、改资料、完成签到</div>
-                    <div class="auth-highlight">管理端：建活动、发签到入口、看统计、控流程</div>
-                    <div class="auth-highlight">二维码链路：扫码后登录，再回到签到页完成签到</div>
+                <div class="brand-lockup">
+                    <img class="brand-mark" src="{% static 'core/images/acm-star-badge.png' %}" alt="BNBU-ACM Logo">
+                    <h1>One BNBU-ACM</h1>
                 </div>
             </div>
             <div class="auth-form">

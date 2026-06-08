@@ -25,6 +25,41 @@ class User(AbstractUser):
         return self.role == self.Roles.SUPER_ADMIN
 
 
+class EmailVerificationCode(models.Model):
+    class Purpose(models.TextChoices):
+        PASSWORD_RESET = 'password_reset', 'Password Reset'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='email_verification_codes')
+    email = models.EmailField()
+    purpose = models.CharField(max_length=50, choices=Purpose.choices)
+    code = models.CharField(max_length=255)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['purpose', 'email', 'created_at']),
+            models.Index(fields=['user', 'purpose', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} · {self.purpose} · {self.email}'
+
+    def is_expired(self):
+        return timezone.now() >= self.expires_at
+
+    def is_available(self):
+        return self.used_at is None and not self.is_expired()
+
+    def mark_used(self):
+        if self.used_at is None:
+            self.used_at = timezone.now()
+            self.save(update_fields=['used_at'])
+
+
 class MemberProfile(models.Model):
     class Status(models.TextChoices):
         ACTIVE = 'active', 'Active'

@@ -82,7 +82,7 @@
             <span class="pill">{{ request.user.get_role_display }}</span>
         </div>
         <p style="margin: 0 0 8px;"><strong>{{ profile.student_id }}</strong></p>
-        <p class="muted" style="margin: 0 0 8px;">{{ profile.major|default:"暂未填写专业" }} · {{ profile.class_name|default:"暂未填写班级" }}</p>
+        <p class="muted" style="margin: 0 0 8px;">{{ profile.major|default:"暂未填写专业" }}</p>
         <p class="muted" style="margin: 0;">邮箱：{{ profile.email|default:"暂未填写" }}</p>
     </article>
 </section>
