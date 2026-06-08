@@ -299,12 +299,9 @@ def build_qr_data_uri(content):
     return f'data:image/png;base64,{encoded}'
 
 
-def deactivate_event_qr_codes(event, deactivated_at=None, exclude_id=None):
+def deactivate_event_qr_codes(event, deactivated_at=None):
     deactivated_at = deactivated_at or timezone.now()
-    qs = event.qr_codes.filter(is_active=True)
-    if exclude_id is not None:
-        qs = qs.exclude(pk=exclude_id)
-    qs.update(is_active=False, deactivated_at=deactivated_at)
+    event.qr_codes.filter(is_active=True).update(is_active=False, deactivated_at=deactivated_at)
 
 
 def issue_event_qr_code(event, operator, request, expires_at):
@@ -332,7 +329,7 @@ def get_current_event_qr_code(event, operator, request):
         # 优先从预生成队列中取出，避免实时生成的延迟
         data = pop_event_qr_queue(event.id)
         if data is not None:
-            deactivate_event_qr_codes(event, deactivated_at=now, exclude_id=data['qr_code'].id)
+            qr_code.mark_inactive(now)
             new_qr = data['qr_code']
             new_qr.created_at = now
             new_qr.save(update_fields=['created_at'])
@@ -1029,27 +1026,31 @@ def event_qr_status(request, event_id):
     if not event.can_manage_checkin(request.user):
         return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
 
-    current_qr = event.qr_codes.filter(is_active=True).first()
     now = timezone.now()
+    # 取最早创建的活跃码来判断是否该轮换（它最先到达刷新截止时间）
+    oldest_active_qr = event.qr_codes.filter(is_active=True).order_by('created_at').first()
 
-    # 当前二维码仍在有效期内且未到刷新时间，直接返回，不消耗队列
-    if current_qr and current_qr.is_valid_at(now) and now < current_qr.get_refresh_deadline(QR_CODE_REFRESH_SECONDS):
+    # 当前最早的活跃码仍在刷新截止时间内，直接返回最新的活跃码，不消耗队列
+    if oldest_active_qr and oldest_active_qr.is_valid_at(now) and now < oldest_active_qr.get_refresh_deadline(QR_CODE_REFRESH_SECONDS):
+        newest_qr = event.qr_codes.filter(is_active=True).order_by('-created_at').first()
+        display_qr = newest_qr or oldest_active_qr
         return JsonResponse(
             {
                 'active': True,
-                'entry_url': current_qr.url,
-                'image': build_qr_data_uri(current_qr.url),
-                'token_preview': f'{current_qr.token[:16]}...',
+                'entry_url': display_qr.url,
+                'image': build_qr_data_uri(display_qr.url),
+                'token_preview': f'{display_qr.token[:16]}...',
                 'refresh_interval_seconds': QR_CODE_REFRESH_SECONDS,
-                'refresh_at': current_qr.get_refresh_deadline(QR_CODE_REFRESH_SECONDS).isoformat(),
-                'expires_at': current_qr.expires_at.isoformat() if current_qr.expires_at else None,
+                'refresh_at': oldest_active_qr.get_refresh_deadline(QR_CODE_REFRESH_SECONDS).isoformat(),
+                'expires_at': display_qr.expires_at.isoformat() if display_qr.expires_at else None,
             }
         )
 
     # 到达刷新时间，优先从预生成队列中取出下一个二维码，消除生成延迟
     data = pop_event_qr_queue(event_id)
     if data is not None:
-        deactivate_event_qr_codes(event, exclude_id=data['qr_code'].id)
+        if oldest_active_qr:
+            oldest_active_qr.mark_inactive(now)
         qr_code = data['qr_code']
         qr_code.created_at = now
         qr_code.save(update_fields=['created_at'])
