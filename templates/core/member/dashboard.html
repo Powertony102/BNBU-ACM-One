@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}队员首页 | One BNBU-ACM{% endblock %}
 {% block topbar_title %}主页{% endblock %}
@@ -26,22 +27,51 @@
 
     <div class="quick-links">
         <a class="quick-link" href="{% url 'member-event-list' %}">浏览活动</a>
+        <a class="quick-link" href="{% url 'member-star-center' %}">进入 ACM Star</a>
         <a class="quick-link" href="{% url 'member-checkin-history' %}">查看签到历史</a>
         <a class="quick-link" href="{% url 'member-profile' %}">维护个人资料</a>
     </div>
 </section>
 
 <section class="grid">
-    <article class="card">
+    <article class="card star-status-card">
         <div class="card-header">
             <h3>ACM Star</h3>
-            <span class="badge {% if star_lit %}live{% else %}dim{% endif %}">{% if star_lit %}Active{% else %}Idle{% endif %}</span>
+            <span class="badge {{ star_snapshot.level.tone }}">{% if star_lit %}{{ star_snapshot.level.label }}{% else %}Idle{% endif %}</span>
         </div>
-        <div class="star-block">
-            <div class="star {% if not star_lit %}dim{% endif %}">★</div>
-            <div>
-                <p style="margin: 0 0 6px;"><strong>{% if star_lit %}近期已参与活动{% else %}近期暂无签到{% endif %}</strong></p>
-                <p class="muted" style="margin: 0;">最近 {{ window_days }} 天内至少一次有效签到即可点亮这枚 ACM Star。</p>
+        <div class="star-hero">
+            <div class="star-crest-shell {% if not star_lit %}dim{% endif %}">
+                <img src="{% static 'core/images/acm-star-badge.png' %}" alt="ACM Star 徽章">
+            </div>
+            <div class="star-copy">
+                <div class="star-level">
+                    <span>{{ star_snapshot.level.label }}</span>
+                    <span>{{ star_snapshot.level.title }}</span>
+                </div>
+                <p style="margin-top: 14px;">
+                    <strong>{% if star_lit %}近期已参与活动，ACM Star 正在发光。{% else %}近期暂无签到，ACM Star 正等待被点亮。{% endif %}</strong>
+                </p>
+                <p>{{ star_snapshot.next_milestone }}</p>
+                <div class="progress-track" aria-hidden="true">
+                    <div class="progress-fill" style="width: {{ star_snapshot.progress_percent }}%;"></div>
+                </div>
+                <div class="star-inline-stats">
+                    <div class="star-inline-stat">
+                        <strong>{{ star_snapshot.recent_checkin_count }}</strong>
+                        <span>近期有效签到</span>
+                    </div>
+                    <div class="star-inline-stat">
+                        <strong>{% if star_snapshot.days_remaining and star_lit %}{{ star_snapshot.days_remaining }} 天{% else %}--{% endif %}</strong>
+                        <span>预计维持时长</span>
+                    </div>
+                    <div class="star-inline-stat">
+                        <strong>{% if star_snapshot.latest_recent_checkin %}{{ star_snapshot.latest_recent_checkin.checkin_time|date:"m-d" }}{% else %}暂无{% endif %}</strong>
+                        <span>最近点亮记录</span>
+                    </div>
+                </div>
+                <div class="quick-links" style="margin-top: 16px;">
+                    <a class="quick-link" href="{% url 'member-star-center' %}">查看专属展示页</a>
+                </div>
             </div>
         </div>
     </article>

@@ -118,7 +118,7 @@
         form p {
             display: grid;
             gap: 8px;
-            margin: 0 0 16px;
+            margin: 0 0 18px;
         }
 
         input,
@@ -156,6 +156,33 @@
 
         button:hover {
             background: #27272a;
+        }
+
+        .auth-form form button {
+            margin-top: 6px;
+        }
+
+        .auth-actions {
+            display: grid;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .auth-footnote {
+            margin: 0;
+            color: var(--muted-foreground);
+            font-size: 0.92rem;
+        }
+
+        .inline-link {
+            color: var(--foreground);
+            font-weight: 600;
+            text-decoration: none;
+            border-bottom: 1px solid rgba(9, 9, 11, 0.18);
+        }
+
+        .inline-link:hover {
+            border-bottom-color: rgba(9, 9, 11, 0.42);
         }
 
         input:focus-visible,

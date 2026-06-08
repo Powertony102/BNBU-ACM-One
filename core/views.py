@@ -1,4 +1,5 @@
 import base64
+import math
 from datetime import timedelta
 from io import BytesIO
 
@@ -6,14 +7,22 @@ from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 import qrcode
 
-from .forms import AdminCreateForm, AdminUpdateForm, EventForm, LoginForm, MemberProfileForm, SystemSettingsForm
+from .forms import (
+    AdminCreateForm,
+    AdminUpdateForm,
+    EventForm,
+    LoginForm,
+    MemberProfileForm,
+    MemberRegistrationForm,
+    SystemSettingsForm,
+)
 from .models import AdminProfile, AuditLog, CheckInRecord, Event, EventQRCode, MemberProfile, SystemSetting, User
 
 
@@ -29,6 +38,112 @@ def log_action(operator, action, target_type, target_id=None, detail=''):
 
 def get_star_window_days():
     return int(SystemSetting.get_value('star_recent_window_days', '30'))
+
+
+def get_star_window():
+    window_days = get_star_window_days()
+    return window_days, timezone.now() - timedelta(days=window_days)
+
+
+def get_star_level(recent_checkin_count):
+    if recent_checkin_count >= 4:
+        return {
+            'slug': 'radiant',
+            'label': 'Radiant',
+            'title': '高光核心',
+            'next_target': None,
+            'tone': 'live',
+        }
+    if recent_checkin_count >= 2:
+        return {
+            'slug': 'pulse',
+            'label': 'Pulse',
+            'title': '稳定发光',
+            'next_target': 4,
+            'tone': 'live',
+        }
+    if recent_checkin_count >= 1:
+        return {
+            'slug': 'spark',
+            'label': 'Spark',
+            'title': '初燃新星',
+            'next_target': 2,
+            'tone': 'warn',
+        }
+    return {
+        'slug': 'dormant',
+        'label': 'Dormant',
+        'title': '等待点亮',
+        'next_target': 1,
+        'tone': 'dim',
+    }
+
+
+def build_member_star_snapshot(profile, window_days=None, window_start=None):
+    if window_days is None or window_start is None:
+        window_days, window_start = get_star_window()
+    now = timezone.now()
+    valid_checkins = profile.checkins.filter(status=CheckInRecord.Status.VALID).select_related('event')
+    recent_checkins = valid_checkins.filter(checkin_time__gte=window_start).order_by('-checkin_time')
+    recent_checkin_count = recent_checkins.count()
+    level = get_star_level(recent_checkin_count)
+    last_valid_checkin = valid_checkins.order_by('-checkin_time').first()
+    latest_recent_checkin = recent_checkins.first()
+    expires_at = (
+        latest_recent_checkin.checkin_time + timedelta(days=window_days)
+        if latest_recent_checkin
+        else None
+    )
+    days_remaining = None
+    if expires_at:
+        seconds_remaining = max(0, (expires_at - now).total_seconds())
+        days_remaining = math.ceil(seconds_remaining / 86400)
+    if recent_checkin_count == 0:
+        next_milestone = f'最近 {window_days} 天内完成 1 次有效签到即可点亮 ACM Star。'
+    elif level['next_target']:
+        next_milestone = (
+            f"再参与 {max(level['next_target'] - recent_checkin_count, 0)} 次活动，"
+            f"即可升级到下一档 Star Level。"
+        )
+    else:
+        next_milestone = '你已经处于最高等级，继续保持近期参与节奏即可。'
+    return {
+        'lit': recent_checkin_count > 0,
+        'recent_checkin_count': recent_checkin_count,
+        'recent_checkins': recent_checkins[:5],
+        'last_valid_checkin': last_valid_checkin,
+        'latest_recent_checkin': latest_recent_checkin,
+        'expires_at': expires_at,
+        'days_remaining': days_remaining,
+        'level': level,
+        'progress_percent': min(recent_checkin_count / 4, 1) * 100,
+        'next_milestone': next_milestone,
+    }
+
+
+def get_star_holders_queryset(window_start):
+    return (
+        MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
+        .annotate(
+            recent_valid_checkins=Count(
+                'checkins',
+                filter=Q(
+                    checkins__status=CheckInRecord.Status.VALID,
+                    checkins__checkin_time__gte=window_start,
+                ),
+            ),
+            last_valid_checkin=Max(
+                'checkins__checkin_time',
+                filter=Q(
+                    checkins__status=CheckInRecord.Status.VALID,
+                    checkins__checkin_time__gte=window_start,
+                ),
+            ),
+        )
+        .filter(recent_valid_checkins__gt=0)
+        .select_related('user')
+        .order_by('-recent_valid_checkins', '-last_valid_checkin', 'real_name')
+    )
 
 
 def build_qr_data_uri(content):
@@ -67,6 +182,19 @@ def login_view(request):
     return render(request, 'core/login.html', {'form': form, 'next': request.GET.get('next', '')})
 
 
+def register_view(request):
+    if request.user.is_authenticated:
+        return role_redirect(request.user)
+    form = MemberRegistrationForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        user = form.save()
+        login(request, user)
+        log_action(user, 'register_member', 'MemberProfile', user.member_profile.id, f'user={user.username}')
+        messages.success(request, '注册成功，欢迎加入 One BNBU-ACM。')
+        return redirect('member-dashboard')
+    return render(request, 'core/register.html', {'form': form})
+
+
 @login_required
 def logout_view(request):
     if request.method == 'POST':
@@ -86,18 +214,15 @@ def member_dashboard(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
     profile = get_object_or_404(MemberProfile, user=request.user)
-    window_days = get_star_window_days()
-    window_start = timezone.now() - timedelta(days=window_days)
-    recent_checkins = profile.checkins.filter(
-        status=CheckInRecord.Status.VALID,
-        checkin_time__gte=window_start,
-    ).select_related('event')
+    window_days, window_start = get_star_window()
+    star_snapshot = build_member_star_snapshot(profile, window_days=window_days, window_start=window_start)
     recent_events = Event.objects.filter(status=Event.Status.PUBLISHED).order_by('start_time')[:5]
     context = {
         'profile': profile,
-        'star_lit': recent_checkins.exists(),
+        'star_lit': star_snapshot['lit'],
+        'star_snapshot': star_snapshot,
         'window_days': window_days,
-        'recent_checkins': recent_checkins[:5],
+        'recent_checkins': star_snapshot['recent_checkins'],
         'upcoming_events': recent_events,
         'checkin_count': profile.checkins.filter(status=CheckInRecord.Status.VALID).count(),
     }
@@ -179,11 +304,32 @@ def member_profile(request):
     profile = get_object_or_404(MemberProfile, user=request.user)
     form = MemberProfileForm(request.POST or None, instance=profile)
     if request.method == 'POST' and form.is_valid():
-        form.save()
+        profile = form.save()
+        if request.user.email != profile.email:
+            request.user.email = profile.email
+            request.user.save(update_fields=['email'])
         log_action(request.user, 'update_member_profile', 'MemberProfile', profile.id)
         messages.success(request, '个人资料已更新。')
         return redirect('member-profile')
     return render(request, 'core/member/profile.html', {'form': form, 'profile': profile})
+
+
+@login_required
+def member_star_center(request):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    profile = get_object_or_404(MemberProfile, user=request.user)
+    window_days, window_start = get_star_window()
+    star_snapshot = build_member_star_snapshot(profile, window_days=window_days, window_start=window_start)
+    return render(
+        request,
+        'core/member/star_center.html',
+        {
+            'profile': profile,
+            'window_days': window_days,
+            'star_snapshot': star_snapshot,
+        },
+    )
 
 
 @login_required
@@ -192,12 +338,10 @@ def management_dashboard(request):
         return HttpResponseForbidden('仅管理员可访问。')
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    window_days = get_star_window_days()
+    window_days, window_start = get_star_window()
     active_members = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE).count()
-    lit_members = MemberProfile.objects.filter(
-        checkins__status=CheckInRecord.Status.VALID,
-        checkins__checkin_time__gte=now - timedelta(days=window_days),
-    ).distinct().count()
+    star_holders = get_star_holders_queryset(window_start)
+    lit_members = star_holders.count()
     context = {
         'recent_event_count': Event.objects.filter(start_time__gte=now).count(),
         'today_checkin_count': CheckInRecord.objects.filter(
@@ -206,8 +350,56 @@ def management_dashboard(request):
         ).count(),
         'lit_members': lit_members,
         'active_members': active_members,
+        'star_ratio': round((lit_members / active_members) * 100) if active_members else 0,
+        'top_star_holders': star_holders[:3],
+        'window_days': window_days,
     }
     return render(request, 'core/management/dashboard.html', context)
+
+
+@login_required
+def star_analytics(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    now = timezone.now()
+    window_days, window_start = get_star_window()
+    star_holders = list(get_star_holders_queryset(window_start))
+    active_members = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
+    active_members_total = active_members.count()
+    for holder in star_holders:
+        holder.star_level = get_star_level(holder.recent_valid_checkins)
+    level_counts = {'spark': 0, 'pulse': 0, 'radiant': 0}
+    major_totals = {}
+    class_totals = {}
+    for holder in star_holders:
+        if holder.star_level['slug'] in level_counts:
+            level_counts[holder.star_level['slug']] += 1
+        major_key = holder.major or '未填写专业'
+        class_key = holder.class_name or '未填写班级'
+        major_totals[major_key] = major_totals.get(major_key, 0) + 1
+        class_totals[class_key] = class_totals.get(class_key, 0) + 1
+    major_breakdown = [
+        {'major': major, 'total': total}
+        for major, total in sorted(major_totals.items(), key=lambda item: (-item[1], item[0]))[:5]
+    ]
+    class_breakdown = [
+        {'class_name': class_name, 'total': total}
+        for class_name, total in sorted(class_totals.items(), key=lambda item: (-item[1], item[0]))[:5]
+    ]
+    context = {
+        'window_days': window_days,
+        'star_holders': star_holders,
+        'star_holders_total': len(star_holders),
+        'active_members_total': active_members_total,
+        'star_ratio': round((len(star_holders) / active_members_total) * 100) if active_members_total else 0,
+        'newly_active_total': sum(1 for holder in star_holders if holder.last_valid_checkin and holder.last_valid_checkin >= now - timedelta(days=7)),
+        'spark_total': level_counts['spark'],
+        'pulse_total': level_counts['pulse'],
+        'radiant_total': level_counts['radiant'],
+        'major_breakdown': major_breakdown,
+        'class_breakdown': class_breakdown,
+    }
+    return render(request, 'core/management/star_analytics.html', context)
 
 
 @login_required

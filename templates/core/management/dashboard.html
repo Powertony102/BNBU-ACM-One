@@ -31,6 +31,7 @@
     <div class="quick-links">
         <a class="quick-link" href="{% url 'event-list-manage' %}">活动管理</a>
         <a class="quick-link" href="{% url 'event-create' %}">创建活动</a>
+        <a class="quick-link" href="{% url 'management-star-analytics' %}">查看 Star 统计</a>
     </div>
 </section>
 
@@ -76,6 +77,40 @@
                 </div>
                 <span class="badge">{{ active_members }} 人</span>
             </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">Star 点亮率</div>
+                    <div class="event-item-meta">最近 {{ window_days }} 天内拥有 ACM Star 的队员占比。</div>
+                </div>
+                <span class="badge warn">{{ star_ratio }}%</span>
+            </div>
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card">
+        <div class="card-header">
+            <h3>重点拥有者</h3>
+            <a class="card-meta" href="{% url 'management-star-analytics' %}">查看统计页</a>
+        </div>
+        <div class="feed-list">
+            {% for holder in top_star_holders %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ holder.real_name }}</div>
+                        <div class="feed-item-meta">{{ holder.major|default:"未填写专业" }} · 近期 {{ holder.recent_valid_checkins }} 次有效签到</div>
+                    </div>
+                    <span class="badge live">点亮中</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无拥有者</div>
+                        <div class="feed-item-meta">当有队员在近期窗口内完成有效签到后，这里会出现重点对象。</div>
+                    </div>
+                </div>
+            {% endfor %}
         </div>
     </article>
 </section>

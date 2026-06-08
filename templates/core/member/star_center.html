@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}ACM Star | One BNBU-ACM{% endblock %}
+{% block topbar_title %}ACM Star{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">队员专属徽章展示页</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ profile.real_name }} 的 ACM Star</h2>
+    <p>这是你的专属 ACM Star 展示页。系统会根据最近 {{ window_days }} 天内的有效签到记录，实时更新你的点亮状态、展示等级和最近活跃轨迹。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ star_snapshot.level.label }}</strong>
+            <span>当前 Star Level</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ star_snapshot.recent_checkin_count }}</strong>
+            <span>近期有效签到</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{% if star_snapshot.lit %}已点亮{% else %}待点亮{% endif %}</strong>
+            <span>当前状态</span>
+        </div>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card star-status-card" style="grid-column: span 2;">
+        <div class="star-hero">
+            <div class="star-crest-shell {% if not star_snapshot.lit %}dim{% endif %}">
+                <img src="{% static 'core/images/acm-star-badge.png' %}" alt="ACM Star 徽章">
+            </div>
+            <div class="star-copy">
+                <div class="card-header" style="margin-bottom: 12px;">
+                    <h3>荣誉展示</h3>
+                    <span class="badge {{ star_snapshot.level.tone }}">{{ star_snapshot.level.title }}</span>
+                </div>
+                <p><strong>{% if star_snapshot.lit %}你的 ACM Star 已点亮，并正在展示近期参与状态。{% else %}你的 ACM Star 尚未点亮，完成下一次有效签到后就会亮起。{% endif %}</strong></p>
+                <p>{{ star_snapshot.next_milestone }}</p>
+                <div class="progress-track" aria-hidden="true">
+                    <div class="progress-fill" style="width: {{ star_snapshot.progress_percent }}%;"></div>
+                </div>
+                <div class="star-inline-stats">
+                    <div class="star-inline-stat">
+                        <strong>{% if star_snapshot.latest_recent_checkin %}{{ star_snapshot.latest_recent_checkin.checkin_time|date:"Y-m-d H:i" }}{% else %}暂无{% endif %}</strong>
+                        <span>最近点亮签到</span>
+                    </div>
+                    <div class="star-inline-stat">
+                        <strong>{% if star_snapshot.expires_at %}{{ star_snapshot.expires_at|date:"Y-m-d" }}{% else %}完成签到后生成{% endif %}</strong>
+                        <span>预计维持到</span>
+                    </div>
+                    <div class="star-inline-stat">
+                        <strong>{% if star_snapshot.last_valid_checkin %}{{ star_snapshot.last_valid_checkin.event.title }}{% else %}暂无{% endif %}</strong>
+                        <span>最近一次签到活动</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card">
+        <div class="card-header">
+            <h3>点亮规则</h3>
+            <span class="pill">System Rule</span>
+        </div>
+        <div class="insight-list">
+            <div class="insight-item">
+                <strong>近期窗口</strong>
+                <p>系统以最近 {{ window_days }} 天为一个 ACM Star 判定窗口。</p>
+            </div>
+            <div class="insight-item">
+                <strong>点亮条件</strong>
+                <p>在窗口内至少完成 1 次有效签到，即可拥有一枚处于点亮状态的 ACM Star。</p>
+            </div>
+            <div class="insight-item">
+                <strong>等级展示</strong>
+                <p>Dormant、Spark、Pulse、Radiant 由近期有效签到次数实时推导，仅用于展示活跃度层次。</p>
+            </div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>近期点亮记录</h3>
+            <span class="pill">{{ star_snapshot.recent_checkin_count }} 条</span>
+        </div>
+        <div class="feed-list">
+            {% for checkin in star_snapshot.recent_checkins %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ checkin.event.title }}</div>
+                        <div class="feed-item-meta">{{ checkin.checkin_time|date:"Y-m-d H:i" }} · {{ checkin.get_checkin_method_display }}</div>
+                    </div>
+                    <span class="badge live">点亮来源</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">尚无近期记录</div>
+                        <div class="feed-item-meta">参加下一场活动并完成签到后，这里会开始积累你的 Star 轨迹。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

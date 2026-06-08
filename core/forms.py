@@ -1,7 +1,23 @@
+import re
+
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.db import transaction
 
 from .models import AdminProfile, Event, MemberProfile, User
+
+
+USERNAME_EXAMPLE = '2330026083'
+SCHOOL_EMAIL_EXAMPLE = 't330026083@mail.bnbu.edu.cn'
+SCHOOL_EMAIL_DOMAIN = '@mail.bnbu.edu.cn'
+USERNAME_PATTERN = re.compile(r'^\d{10}$')
+MAJOR_CODE_PATTERN = re.compile(r'^[A-Z]{2,10}$')
+
+
+def normalize_major_code(value):
+    return value.strip().upper()
 
 
 def apply_widget_attrs(fields):
@@ -35,20 +51,137 @@ class LoginForm(AuthenticationForm):
         self.fields['password'].widget.attrs['autocomplete'] = 'current-password'
 
 
+class MemberRegistrationForm(forms.Form):
+    real_name = forms.CharField(label='姓名', max_length=100)
+    username = forms.CharField(label='用户名', max_length=150)
+    enrollment_year = forms.IntegerField(label='入学年份', min_value=2000, max_value=2100)
+    major = forms.CharField(label='专业代码', max_length=10)
+    school_email = forms.EmailField(label='学校邮箱')
+    password1 = forms.CharField(label='密码', widget=forms.PasswordInput)
+    password2 = forms.CharField(label='确认密码', widget=forms.PasswordInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['username'].widget.attrs.update(
+            {
+                'autocomplete': 'username',
+                'inputmode': 'numeric',
+                'pattern': r'\d{10}',
+                'maxlength': 10,
+                'placeholder': USERNAME_EXAMPLE,
+            }
+        )
+        self.fields['real_name'].widget.attrs['autocomplete'] = 'name'
+        self.fields['enrollment_year'].widget.attrs['placeholder'] = '2023'
+        self.fields['major'].widget.attrs['placeholder'] = 'CST'
+        self.fields['school_email'].widget.attrs.update(
+            {
+                'autocomplete': 'email',
+                'placeholder': SCHOOL_EMAIL_EXAMPLE,
+            }
+        )
+        self.fields['password1'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['password2'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['username'].help_text = '必须为 10 位纯数字，例如 2330026083。'
+        self.fields['major'].help_text = '请输入英文专业代码，例如 CST 或 DS。'
+        self.fields['school_email'].help_text = '必须使用 @mail.bnbu.edu.cn 学校邮箱。'
+
+    def clean_username(self):
+        username = self.cleaned_data['username'].strip()
+        if not USERNAME_PATTERN.fullmatch(username):
+            raise forms.ValidationError('用户名必须是 10 位纯数字。')
+        if User.objects.filter(username=username).exists():
+            raise forms.ValidationError('该用户名已存在。')
+        return username
+
+    def clean_major(self):
+        major = normalize_major_code(self.cleaned_data['major'])
+        if not MAJOR_CODE_PATTERN.fullmatch(major):
+            raise forms.ValidationError('专业代码只能包含 2-10 位大写英文字母，例如 CST 或 DS。')
+        return major
+
+    def clean_school_email(self):
+        school_email = self.cleaned_data['school_email'].strip().lower()
+        if not school_email.endswith(SCHOOL_EMAIL_DOMAIN):
+            raise forms.ValidationError('学校邮箱必须使用 @mail.bnbu.edu.cn 域名。')
+        return school_email
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get('password1')
+        password2 = cleaned_data.get('password2')
+        if password1 and password2 and password1 != password2:
+            self.add_error('password2', '两次输入的密码不一致。')
+        if password1 and not self.errors.get('password2'):
+            try:
+                validate_password(
+                    password1,
+                    user=User(
+                        username=cleaned_data.get('username', ''),
+                        email=cleaned_data.get('school_email', ''),
+                    ),
+                )
+            except ValidationError as exc:
+                self.add_error('password1', exc)
+        return cleaned_data
+
+    @transaction.atomic
+    def save(self):
+        user = User.objects.create_user(
+            username=self.cleaned_data['username'],
+            email=self.cleaned_data['school_email'],
+            password=self.cleaned_data['password1'],
+            role=User.Roles.MEMBER,
+        )
+        MemberProfile.objects.create(
+            user=user,
+            real_name=self.cleaned_data['real_name'],
+            student_id=self.cleaned_data['username'],
+            email=self.cleaned_data['school_email'],
+            major=self.cleaned_data['major'],
+            enrollment_year=self.cleaned_data['enrollment_year'],
+            status=MemberProfile.Status.ACTIVE,
+        )
+        return user
+
+
 class MemberProfileForm(forms.ModelForm):
+    email = forms.EmailField(label='学校邮箱')
+    major = forms.CharField(label='专业代码', max_length=10)
+    enrollment_year = forms.IntegerField(label='入学年份', min_value=2000, max_value=2100)
+
     class Meta:
         model = MemberProfile
-        fields = ['email', 'phone', 'major', 'class_name']
+        fields = ['email', 'major', 'enrollment_year', 'phone', 'class_name']
         labels = {
-            'email': '邮箱',
+            'email': '学校邮箱',
             'phone': '手机号',
-            'major': '专业',
+            'major': '专业代码',
+            'enrollment_year': '入学年份',
             'class_name': '班级',
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
+        self.fields['email'].widget.attrs['placeholder'] = SCHOOL_EMAIL_EXAMPLE
+        self.fields['major'].widget.attrs['placeholder'] = 'CST'
+        self.fields['enrollment_year'].widget.attrs['placeholder'] = '2023'
+        self.fields['email'].help_text = '必须使用 @mail.bnbu.edu.cn 学校邮箱。'
+        self.fields['major'].help_text = '请输入英文专业代码，例如 CST 或 DS。'
+
+    def clean_email(self):
+        email = self.cleaned_data['email'].strip().lower()
+        if not email.endswith(SCHOOL_EMAIL_DOMAIN):
+            raise forms.ValidationError('学校邮箱必须使用 @mail.bnbu.edu.cn 域名。')
+        return email
+
+    def clean_major(self):
+        major = normalize_major_code(self.cleaned_data['major'])
+        if not MAJOR_CODE_PATTERN.fullmatch(major):
+            raise forms.ValidationError('专业代码只能包含 2-10 位大写英文字母，例如 CST 或 DS。')
+        return major
 
 
 class EventForm(forms.ModelForm):

@@ -36,6 +36,7 @@ class MemberProfile(models.Model):
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=30, blank=True)
     major = models.CharField(max_length=100, blank=True)
+    enrollment_year = models.PositiveSmallIntegerField(null=True, blank=True)
     class_name = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     created_at = models.DateTimeField(auto_now_add=True)

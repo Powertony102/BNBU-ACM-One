@@ -11,6 +11,9 @@
         <input type="hidden" name="next" value="{{ next }}">
     {% endif %}
     {{ form.as_p }}
-    <button type="submit">进入系统</button>
+    <div class="auth-actions">
+        <button type="submit">进入系统</button>
+        <p class="auth-footnote">还没有账号？<a class="inline-link" href="{% url 'register' %}">立即注册</a></p>
+    </div>
 </form>
 {% endblock %}

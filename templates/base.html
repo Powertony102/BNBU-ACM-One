@@ -505,6 +505,157 @@
             color: #7a7a82;
         }
 
+        .star-status-card {
+            position: relative;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at top, rgba(255, 214, 95, 0.28), transparent 38%),
+                linear-gradient(135deg, #fffaf0 0%, #ffffff 44%, #f6f8ff 100%);
+        }
+
+        .star-status-card::after {
+            content: "";
+            position: absolute;
+            inset: auto -24px -28px auto;
+            width: 180px;
+            height: 180px;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(28, 107, 182, 0.1), transparent 68%);
+            pointer-events: none;
+        }
+
+        .star-hero {
+            display: grid;
+            grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+            gap: 22px;
+            align-items: center;
+        }
+
+        .star-crest-shell {
+            position: relative;
+            padding: 18px;
+            border-radius: 28px;
+            background:
+                radial-gradient(circle at top, rgba(255, 201, 65, 0.38), transparent 42%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 246, 224, 0.86));
+            border: 1px solid rgba(238, 194, 88, 0.42);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 18px 40px rgba(227, 174, 52, 0.16);
+        }
+
+        .star-crest-shell.dim {
+            background:
+                radial-gradient(circle at top, rgba(161, 161, 170, 0.22), transparent 42%),
+                linear-gradient(180deg, rgba(250, 250, 250, 0.95), rgba(238, 238, 241, 0.88));
+            border-color: rgba(212, 212, 216, 0.9);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 12px 28px rgba(113, 113, 122, 0.08);
+        }
+
+        .star-crest-shell img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .star-crest-shell.dim img {
+            filter: grayscale(1) saturate(0.1) opacity(0.6);
+        }
+
+        .star-level {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(24, 24, 27, 0.05);
+            border: 1px solid rgba(24, 24, 27, 0.08);
+            font-size: 0.88rem;
+            font-weight: 700;
+        }
+
+        .star-level span:last-child {
+            color: var(--muted-foreground);
+            font-weight: 600;
+        }
+
+        .star-copy h3 {
+            margin-bottom: 10px;
+        }
+
+        .star-copy p {
+            margin: 0 0 12px;
+            color: var(--muted-foreground);
+            line-height: 1.65;
+        }
+
+        .star-inline-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .star-inline-stat {
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.74);
+            border: 1px solid rgba(228, 228, 231, 0.86);
+        }
+
+        .star-inline-stat strong {
+            display: block;
+            font-size: 1.1rem;
+            margin-bottom: 4px;
+        }
+
+        .star-inline-stat span {
+            font-size: 0.86rem;
+            color: var(--muted-foreground);
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 10px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(24, 24, 27, 0.08);
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #efb91d 0%, #f7cf49 40%, #1f7ccc 100%);
+        }
+
+        .insight-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .insight-item {
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            background: rgba(252, 252, 252, 0.9);
+        }
+
+        .insight-item strong {
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .insight-item p {
+            margin: 0;
+            color: var(--muted-foreground);
+            line-height: 1.6;
+        }
+
+        .table-badge-stack {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
         .pill,
         .badge {
             display: inline-flex;
@@ -735,6 +886,10 @@
                 padding: 10px;
             }
 
+            .star-hero {
+                grid-template-columns: 1fr;
+            }
+
             .content {
                 padding: 18px 18px 24px;
             }
@@ -771,6 +926,9 @@
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-event-list' or request.resolver_match.url_name == 'member-event-detail' %}active{% endif %}" href="{% url 'member-event-list' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>活动</span></span>
                             </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-star-center' %}active{% endif %}" href="{% url 'member-star-center' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>ACM Star</span></span>
+                            </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-checkin-history' %}active{% endif %}" href="{% url 'member-checkin-history' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>签到历史</span></span>
                             </a>
@@ -789,6 +947,9 @@
                             <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' %}active{% endif %}" href="{% url 'event-list-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>活动管理</span></span>
                             </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'management-star-analytics' %}active{% endif %}" href="{% url 'management-star-analytics' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 统计</span></span>
+                            </a>
                             {% if request.user.role == 'super_admin' %}
                                 <a class="nav-item {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' %}active{% endif %}" href="{% url 'admin-list-manage' %}">
                                     <span class="nav-item-label"><span class="nav-bullet"></span><span>管理员管理</span></span>
@@ -806,14 +967,14 @@
                     <div>
                         <div class="nav-group-title">当前能力</div>
                         <div class="nav-list">
-                            <div class="nav-item">
+                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' %}active{% endif %}" href="{% url 'event-list-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>二维码入口</span></span>
                                 <span class="nav-note">已接通</span>
-                            </div>
-                            <div class="nav-item">
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 规则</span></span>
                                 <span class="nav-note">已接通</span>
-                            </div>
+                            </a>
                         </div>
                     </div>
                 {% endif %}

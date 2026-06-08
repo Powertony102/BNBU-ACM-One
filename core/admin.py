@@ -15,7 +15,7 @@ class UserAdmin(DjangoUserAdmin):
 
 @admin.register(MemberProfile)
 class MemberProfileAdmin(admin.ModelAdmin):
-    list_display = ('real_name', 'student_id', 'status', 'user')
+    list_display = ('real_name', 'student_id', 'enrollment_year', 'major', 'status', 'user')
     search_fields = ('real_name', 'student_id', 'user__username')
 
 

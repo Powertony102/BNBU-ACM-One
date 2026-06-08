@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}ACM Star 统计 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}ACM Star 统计{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">管理员视角下的拥有者分布与活跃概况</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>ACM Star 拥有者统计</h2>
+    <p>以下统计全部基于最近 {{ window_days }} 天内的有效签到实时计算，用于帮助管理员观察当前点亮人数、等级分布以及拥有者群体的专业和班级构成。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ star_holders_total }}</strong>
+            <span>当前拥有者</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ star_ratio }}%</strong>
+            <span>点亮率</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ newly_active_total }}</strong>
+            <span>近 7 天活跃</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ active_members_total }}</strong>
+            <span>启用队员</span>
+        </div>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>等级分布</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">Spark</div>
+                    <div class="event-item-meta">最近窗口内 1 次有效签到。</div>
+                </div>
+                <span class="badge warn">{{ spark_total }} 人</span>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">Pulse</div>
+                    <div class="event-item-meta">最近窗口内 2-3 次有效签到。</div>
+                </div>
+                <span class="badge live">{{ pulse_total }} 人</span>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">Radiant</div>
+                    <div class="event-item-meta">最近窗口内 4 次及以上有效签到。</div>
+                </div>
+                <span class="badge live">{{ radiant_total }} 人</span>
+            </div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>分布摘要</h3>
+        </div>
+        <div class="insight-list">
+            <div class="insight-item">
+                <strong>统计范围</strong>
+                <p>当前仅统计处于启用状态、且在近期窗口内完成过有效签到的队员。</p>
+            </div>
+            <div class="insight-item">
+                <strong>拥有者定义</strong>
+                <p>至少 1 次近期有效签到即可拥有一枚当前点亮中的 ACM Star。</p>
+            </div>
+            <div class="insight-item">
+                <strong>管理价值</strong>
+                <p>可用来快速定位高参与队员、观察班级覆盖面，并辅助活动运营节奏调整。</p>
+            </div>
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card">
+        <div class="card-header">
+            <h3>专业分布</h3>
+        </div>
+        <div class="feed-list">
+            {% for item in major_breakdown %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ item.major|default:"未填写专业" }}</div>
+                        <div class="feed-item-meta">当前 ACM Star 拥有者在该专业中的人数。</div>
+                    </div>
+                    <span class="badge">{{ item.total }} 人</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无数据</div>
+                        <div class="feed-item-meta">当有点亮中的队员后，这里会自动出现专业分布。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>班级分布</h3>
+        </div>
+        <div class="feed-list">
+            {% for item in class_breakdown %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ item.class_name|default:"未填写班级" }}</div>
+                        <div class="feed-item-meta">当前 ACM Star 拥有者在该班级中的人数。</div>
+                    </div>
+                    <span class="badge">{{ item.total }} 人</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无数据</div>
+                        <div class="feed-item-meta">当有点亮中的队员后，这里会自动出现班级分布。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="card" style="margin-top: 18px;">
+    <div class="card-header">
+        <h3>拥有者名单</h3>
+        <span class="pill">{{ star_holders_total }} 位</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>队员</th>
+                <th>资料</th>
+                <th>近期签到</th>
+                <th>Star Level</th>
+                <th>最近点亮时间</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for holder in star_holders %}
+                <tr>
+                    <td>
+                        <div class="table-title">{{ holder.real_name }}</div>
+                        <div class="table-subtitle">{{ holder.student_id }}</div>
+                    </td>
+                    <td>{{ holder.major|default:"未填写专业" }} / {{ holder.class_name|default:"未填写班级" }}</td>
+                    <td>{{ holder.recent_valid_checkins }} 次</td>
+                    <td>
+                        <span class="table-badge-stack">
+                            <span class="badge {{ holder.star_level.tone }}">{{ holder.star_level.label }}</span>
+                            <span class="muted">{{ holder.star_level.title }}</span>
+                        </span>
+                    </td>
+                    <td>{{ holder.last_valid_checkin|date:"Y-m-d H:i" }}</td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="5" class="muted">当前没有处于点亮状态的 ACM Star 拥有者。</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
