@@ -328,7 +328,10 @@ def get_current_event_qr_code(event, operator, request):
         data = pop_event_qr_queue(event.id)
         if data is not None:
             deactivate_event_qr_codes(event, deactivated_at=now, exclude_id=data['qr_code'].id)
-            return data['qr_code']
+            new_qr = data['qr_code']
+            new_qr.created_at = now
+            new_qr.save(update_fields=['created_at'])
+            return new_qr
         deactivate_event_qr_codes(event, deactivated_at=now)
         return issue_event_qr_code(event, operator or qr_code.created_by, request, qr_code.expires_at)
 
@@ -1043,6 +1046,8 @@ def event_qr_status(request, event_id):
     if data is not None:
         deactivate_event_qr_codes(event, exclude_id=data['qr_code'].id)
         qr_code = data['qr_code']
+        qr_code.created_at = now
+        qr_code.save(update_fields=['created_at'])
         return JsonResponse(
             {
                 'active': True,
