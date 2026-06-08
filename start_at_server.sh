@@ -11,7 +11,7 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-your-domain.com}"                  # 你的域名
 PROJECT_DIR="${PROJECT_DIR:-/www/wwwroot/${DOMAIN}}"  # 项目根目录
 BACKEND_DIR="${PROJECT_DIR}"                          # Django 项目目录（manage.py 所在）
-VENV_DIR="${BACKEND_DIR}/venv"                        # 虚拟环境路径
+VENV_DIR="${BACKEND_DIR}/.venv"                       # 虚拟环境路径
 SERVICE_NAME="acm-django"                             # systemd 服务名
 GUNICORN_PORT=8001                                    # Gunicorn 监听端口
 GUNICORN_WORKERS=3                                    # Gunicorn 工作进程数
@@ -56,13 +56,23 @@ echo ""
 echo "[2/7] 创建虚拟环境并安装依赖..."
 cd "${BACKEND_DIR}"
 
-if [[ ! -d "${VENV_DIR}" ]]; then
-    python3 -m venv "${VENV_DIR}"
+# 检查是否有 uv，优先使用
+if command -v uv &> /dev/null; then
+    echo "使用 uv 安装依赖..."
+    if [[ ! -d "${VENV_DIR}" ]]; then
+        uv venv "${VENV_DIR}"
+    fi
+    source "${VENV_DIR}/bin/activate"
+    uv pip install -r requirements.txt
+else
+    echo "使用 pip 安装依赖..."
+    if [[ ! -d "${VENV_DIR}" ]]; then
+        python3 -m venv "${VENV_DIR}"
+    fi
+    source "${VENV_DIR}/bin/activate"
+    pip install --upgrade pip -q
+    pip install -r requirements.txt -q
 fi
-
-source "${VENV_DIR}/bin/activate"
-pip install --upgrade pip -q
-pip install -r requirements.txt -q
 echo "依赖安装完成"
 
 # ----- 3. 数据库迁移 -----
@@ -159,7 +169,7 @@ else
     echo ""
     echo "  或手动测试 Gunicorn:"
     echo "  cd ${BACKEND_DIR}"
-    echo "  source venv/bin/activate"
+    echo "  source .venv/bin/activate"
     echo "  gunicorn one_bnbu_acm.wsgi:application --bind 127.0.0.1:${GUNICORN_PORT}"
     echo "=========================================="
     exit 1
