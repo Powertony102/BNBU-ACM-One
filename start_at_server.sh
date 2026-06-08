@@ -17,6 +17,7 @@ GUNICORN_PORT=8001                                    # Gunicorn 监听端口
 GUNICORN_WORKERS=3                                    # Gunicorn 工作进程数
 WWW_USER="www"                                        # 宝塔默认用户
 WWW_GROUP="www"                                       # 宝塔默认用户组
+LOG_DIR="${BACKEND_DIR}/logs"                         # 日志目录
 
 # Django 生产环境变量
 export DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY:-$(python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')}"
@@ -94,6 +95,10 @@ python manage.py bootstrap_demo || true
 echo ""
 echo "[6/7] 创建 systemd 服务..."
 
+# 创建日志目录
+mkdir -p "${LOG_DIR}"
+chown "${WWW_USER}:${WWW_GROUP}" "${LOG_DIR}"
+
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=ACM System Django Gunicorn Service
@@ -113,8 +118,8 @@ Environment="DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}"
 ExecStart=${VENV_DIR}/bin/gunicorn one_bnbu_acm.wsgi:application \\
     --workers ${GUNICORN_WORKERS} \\
     --bind 127.0.0.1:${GUNICORN_PORT} \\
-    --access-logfile /var/log/${SERVICE_NAME}-access.log \\
-    --error-logfile /var/log/${SERVICE_NAME}-error.log
+    --access-logfile ${LOG_DIR}/access.log \\
+    --error-logfile ${LOG_DIR}/error.log
 Restart=always
 RestartSec=5
 
