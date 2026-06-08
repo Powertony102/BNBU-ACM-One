@@ -32,6 +32,7 @@ class Command(BaseCommand):
         user, created = User.objects.update_or_create(
             username='superadmin',
             defaults={
+                'email': 'superadmin@mail.bnbu.edu.cn',
                 'role': User.Roles.SUPER_ADMIN,
                 'is_staff': True,
                 'is_superuser': True,
@@ -56,6 +57,7 @@ class Command(BaseCommand):
         user, created = User.objects.update_or_create(
             username='member01',
             defaults={
+                'email': 'member01@example.com',
                 'role': User.Roles.MEMBER,
                 'is_active': True,
             },

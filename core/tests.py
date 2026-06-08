@@ -2,6 +2,7 @@ from datetime import timedelta
 import re
 
 from django.core import mail
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -273,3 +274,89 @@ class PasswordResetTests(TestCase):
 
         verification = EmailVerificationCode.objects.get(user=self.user)
         self.assertEqual(verification.attempt_count, 1)
+
+
+class PasswordChangeTests(TestCase):
+    def setUp(self):
+        self.member_user = User.objects.create_user(
+            username='2430026137',
+            password='OldPassword2026!',
+            email='u430026137@mail.bnbu.edu.cn',
+            role=User.Roles.MEMBER,
+        )
+        MemberProfile.objects.create(
+            user=self.member_user,
+            real_name='刘扬',
+            student_id='2430026137',
+            email='u430026137@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        self.admin_user = User.objects.create_user(
+            username='admin01',
+            password='AdminPassword2026!',
+            email='admin01@mail.bnbu.edu.cn',
+            role=User.Roles.ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=self.admin_user,
+            display_name='运营管理员',
+            admin_level=AdminProfile.Level.ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+
+    def test_member_can_change_password_while_staying_logged_in(self):
+        self.client.login(username='2430026137', password='OldPassword2026!')
+
+        send_response = self.client.post(
+            reverse('password-change-request'),
+            follow=True,
+        )
+        self.assertRedirects(send_response, reverse('password-change-confirm'))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('修改密码验证码', mail.outbox[0].subject)
+        code = re.search(r'验证码：(\d{6})', mail.outbox[0].body).group(1)
+
+        confirm_response = self.client.post(
+            reverse('password-change-confirm'),
+            {
+                'code': code,
+                'password1': 'BrandNewPassword2026!',
+                'password2': 'BrandNewPassword2026!',
+            },
+            follow=True,
+        )
+        self.assertRedirects(confirm_response, reverse('member-dashboard'))
+        self.assertTrue(confirm_response.wsgi_request.user.is_authenticated)
+
+        self.member_user.refresh_from_db()
+        self.assertTrue(self.member_user.check_password('BrandNewPassword2026!'))
+        self.client.post(reverse('logout'))
+        self.assertTrue(self.client.login(username='2430026137', password='BrandNewPassword2026!'))
+
+        verification = EmailVerificationCode.objects.get(
+            user=self.member_user,
+            purpose=EmailVerificationCode.Purpose.PASSWORD_CHANGE,
+        )
+        self.assertIsNotNone(verification.used_at)
+
+    def test_management_pages_show_password_change_entry(self):
+        self.client.login(username='admin01', password='AdminPassword2026!')
+        response = self.client.get(reverse('management-dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('password-change-request'))
+        self.assertContains(response, '修改密码')
+
+
+class BootstrapDemoCommandTests(TestCase):
+    def test_bootstrap_demo_sets_user_email_for_seed_accounts(self):
+        call_command('bootstrap_demo')
+
+        superadmin = User.objects.get(username='superadmin')
+        member = User.objects.get(username='member01')
+
+        self.assertEqual(superadmin.email, 'superadmin@mail.bnbu.edu.cn')
+        self.assertEqual(member.email, 'member01@example.com')
+        self.assertEqual(member.member_profile.email, 'member01@example.com')

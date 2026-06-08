@@ -10,8 +10,8 @@ PORT="${PORT:-8000}"
 
 # Resend configuration.
 # Override these before startup for real email delivery.
-export RESEND_API_KEY="${RESEND_API_KEY:-re_xxx}"
-export DEFAULT_FROM_EMAIL="${DEFAULT_FROM_EMAIL:-no-reply@example.com}"
+export RESEND_API_KEY="${RESEND_API_KEY:-re_87BBQNbh_EmhjQryJD6S4ruD2hsC4UHu2}"
+export DEFAULT_FROM_EMAIL="${DEFAULT_FROM_EMAIL:-no-reply@mail.tony102.com}"
 
 if [[ ! -x "${CONDA_BIN}" ]]; then
   echo "Conda binary not found at ${CONDA_BIN}" >&2

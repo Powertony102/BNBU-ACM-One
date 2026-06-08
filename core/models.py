@@ -28,6 +28,7 @@ class User(AbstractUser):
 class EmailVerificationCode(models.Model):
     class Purpose(models.TextChoices):
         PASSWORD_RESET = 'password_reset', 'Password Reset'
+        PASSWORD_CHANGE = 'password_change', 'Password Change'
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='email_verification_codes')
     email = models.EmailField()

@@ -265,6 +265,48 @@ class PasswordResetConfirmForm(forms.Form):
         return cleaned_data
 
 
+class PasswordChangeConfirmForm(forms.Form):
+    code = forms.CharField(label='邮箱验证码', max_length=6)
+    password1 = forms.CharField(label='新密码', widget=forms.PasswordInput)
+    password2 = forms.CharField(label='确认新密码', widget=forms.PasswordInput)
+
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        apply_widget_attrs(self.fields)
+        self.fields['code'].widget.attrs.update(
+            {
+                'autocomplete': 'one-time-code',
+                'inputmode': 'numeric',
+                'pattern': r'\d{6}',
+                'maxlength': 6,
+                'placeholder': '6 位数字验证码',
+            }
+        )
+        self.fields['password1'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['password2'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['code'].help_text = '验证码默认 10 分钟内有效。'
+
+    def clean_code(self):
+        code = self.cleaned_data['code'].strip()
+        if not re.fullmatch(r'\d{6}', code):
+            raise forms.ValidationError('验证码必须是 6 位数字。')
+        return code
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get('password1')
+        password2 = cleaned_data.get('password2')
+        if password1 and password2 and password1 != password2:
+            self.add_error('password2', '两次输入的密码不一致。')
+        if password1 and not self.errors.get('password2'):
+            try:
+                validate_password(password1, user=self.user)
+            except ValidationError as exc:
+                self.add_error('password1', exc)
+        return cleaned_data
+
+
 class MemberProfileForm(forms.ModelForm):
     email = forms.EmailField(label='学校邮箱')
     major = forms.CharField(label='专业代码', max_length=10)

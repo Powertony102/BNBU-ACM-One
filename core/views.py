@@ -5,7 +5,7 @@ from io import BytesIO
 from urllib.parse import urlencode
 
 from django.contrib import messages
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ValidationError
@@ -23,12 +23,22 @@ from .forms import (
     LoginForm,
     MemberProfileForm,
     MemberRegistrationForm,
+    PasswordChangeConfirmForm,
     PasswordResetConfirmForm,
     PasswordResetRequestForm,
     SystemSettingsForm,
 )
 from .models import AdminProfile, AuditLog, CheckInRecord, Event, EventQRCode, MemberProfile, SystemSetting, User
-from .services import invalidate_password_reset_codes, issue_password_reset_code, send_password_reset_code_email, verify_password_reset_code
+from .services import (
+    invalidate_password_change_codes,
+    invalidate_password_reset_codes,
+    issue_password_change_code,
+    issue_password_reset_code,
+    send_password_change_code_email,
+    send_password_reset_code_email,
+    verify_password_change_code,
+    verify_password_reset_code,
+)
 
 
 def log_action(operator, action, target_type, target_id=None, detail=''):
@@ -265,6 +275,83 @@ def password_reset_confirm_view(request):
             messages.success(request, '密码已重置，请使用新密码登录。')
             return redirect('login')
     return render(request, 'core/password_reset_confirm.html', {'form': form})
+
+
+@login_required
+def password_change_request_view(request):
+    email = request.user.email.strip().lower()
+    if request.method == 'POST':
+        if not email:
+            messages.error(request, '当前账号尚未绑定邮箱，暂时无法通过验证码修改密码。')
+            return redirect('password-change-request')
+        try:
+            _, raw_code = issue_password_change_code(request.user, email)
+            send_password_change_code_email(request.user, email, raw_code)
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0] if hasattr(exc, 'messages') else str(exc))
+        else:
+            log_action(
+                request.user,
+                'send_password_change_code',
+                'User',
+                request.user.id,
+                f'email={email}',
+            )
+            messages.success(request, '验证码已发送到当前绑定邮箱，请查收后继续修改密码。')
+            return redirect('password-change-confirm')
+    return render(
+        request,
+        'core/password_change_request.html',
+        {
+            'account_email': email,
+            'has_email': bool(email),
+        },
+    )
+
+
+@login_required
+def password_change_confirm_view(request):
+    email = request.user.email.strip().lower()
+    if not email:
+        messages.error(request, '当前账号尚未绑定邮箱，暂时无法通过验证码修改密码。')
+        return redirect('password-change-request')
+    form = PasswordChangeConfirmForm(request.user, request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            verification = verify_password_change_code(
+                request.user,
+                email,
+                form.cleaned_data['code'],
+            )
+        except ValidationError as exc:
+            form.add_error('code', exc)
+        else:
+            request.user.set_password(form.cleaned_data['password1'])
+            request.user.save(update_fields=['password'])
+            update_session_auth_hash(request, request.user)
+            verification.mark_used()
+            invalidate_password_change_codes(
+                request.user,
+                email,
+                exclude_id=verification.id,
+            )
+            log_action(
+                request.user,
+                'password_change_by_email_code',
+                'User',
+                request.user.id,
+                f'email={email}',
+            )
+            messages.success(request, '密码已更新，当前登录状态已保持。')
+            return redirect('home')
+    return render(
+        request,
+        'core/password_change_confirm.html',
+        {
+            'form': form,
+            'account_email': email,
+        },
+    )
 
 
 @login_required

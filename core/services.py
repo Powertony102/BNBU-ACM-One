@@ -25,14 +25,14 @@ def password_reset_code_expires_in_minutes():
     return max(1, math.ceil(settings.PASSWORD_RESET_CODE_TTL_SECONDS / 60))
 
 
-def issue_password_reset_code(user, email):
+def issue_email_verification_code(user, email, purpose):
     email = normalize_email(email)
     now = timezone.now()
     recent_code = (
         EmailVerificationCode.objects.filter(
             user=user,
             email=email,
-            purpose=EmailVerificationCode.Purpose.PASSWORD_RESET,
+            purpose=purpose,
         )
         .order_by('-created_at')
         .first()
@@ -47,7 +47,7 @@ def issue_password_reset_code(user, email):
     EmailVerificationCode.objects.filter(
         user=user,
         email=email,
-        purpose=EmailVerificationCode.Purpose.PASSWORD_RESET,
+        purpose=purpose,
         used_at__isnull=True,
         expires_at__gt=now,
     ).update(expires_at=now)
@@ -56,20 +56,28 @@ def issue_password_reset_code(user, email):
     verification = EmailVerificationCode.objects.create(
         user=user,
         email=email,
-        purpose=EmailVerificationCode.Purpose.PASSWORD_RESET,
+        purpose=purpose,
         code=make_password(raw_code),
         expires_at=now + timedelta(seconds=settings.PASSWORD_RESET_CODE_TTL_SECONDS),
     )
     return verification, raw_code
 
 
-def send_password_reset_code_email(user, email, raw_code):
+def issue_password_reset_code(user, email):
+    return issue_email_verification_code(user, email, EmailVerificationCode.Purpose.PASSWORD_RESET)
+
+
+def issue_password_change_code(user, email):
+    return issue_email_verification_code(user, email, EmailVerificationCode.Purpose.PASSWORD_CHANGE)
+
+
+def send_email_verification_code_email(user, email, raw_code, subject, action_label):
     context = {
         'username': user.username,
         'code': raw_code,
         'expires_in_minutes': password_reset_code_expires_in_minutes(),
+        'action_label': action_label,
     }
-    subject = 'One BNBU-ACM 密码重置验证码'
     text_body = render_to_string('emails/password_reset_code.txt', context)
     html_body = render_to_string('emails/password_reset_code.html', context)
     message = EmailMultiAlternatives(
@@ -82,13 +90,33 @@ def send_password_reset_code_email(user, email, raw_code):
     message.send(fail_silently=False)
 
 
-def verify_password_reset_code(user, email, raw_code):
+def send_password_reset_code_email(user, email, raw_code):
+    send_email_verification_code_email(
+        user,
+        email,
+        raw_code,
+        'One BNBU-ACM 密码重置验证码',
+        '重置密码',
+    )
+
+
+def send_password_change_code_email(user, email, raw_code):
+    send_email_verification_code_email(
+        user,
+        email,
+        raw_code,
+        'One BNBU-ACM 修改密码验证码',
+        '修改密码',
+    )
+
+
+def verify_email_verification_code(user, email, raw_code, purpose):
     email = normalize_email(email)
     verification = (
         EmailVerificationCode.objects.filter(
             user=user,
             email=email,
-            purpose=EmailVerificationCode.Purpose.PASSWORD_RESET,
+            purpose=purpose,
         )
         .order_by('-created_at')
         .first()
@@ -106,15 +134,51 @@ def verify_password_reset_code(user, email, raw_code):
     return verification
 
 
-def invalidate_password_reset_codes(user, email, exclude_id=None):
+def verify_password_reset_code(user, email, raw_code):
+    return verify_email_verification_code(
+        user,
+        email,
+        raw_code,
+        EmailVerificationCode.Purpose.PASSWORD_RESET,
+    )
+
+
+def verify_password_change_code(user, email, raw_code):
+    return verify_email_verification_code(
+        user,
+        email,
+        raw_code,
+        EmailVerificationCode.Purpose.PASSWORD_CHANGE,
+    )
+
+
+def invalidate_email_verification_codes(user, email, purpose, exclude_id=None):
     email = normalize_email(email)
     queryset = EmailVerificationCode.objects.filter(
         user=user,
         email=email,
-        purpose=EmailVerificationCode.Purpose.PASSWORD_RESET,
+        purpose=purpose,
         used_at__isnull=True,
         expires_at__gt=timezone.now(),
     )
     if exclude_id is not None:
         queryset = queryset.exclude(id=exclude_id)
     queryset.update(expires_at=timezone.now())
+
+
+def invalidate_password_reset_codes(user, email, exclude_id=None):
+    invalidate_email_verification_codes(
+        user,
+        email,
+        EmailVerificationCode.Purpose.PASSWORD_RESET,
+        exclude_id=exclude_id,
+    )
+
+
+def invalidate_password_change_codes(user, email, exclude_id=None):
+    invalidate_email_verification_codes(
+        user,
+        email,
+        EmailVerificationCode.Purpose.PASSWORD_CHANGE,
+        exclude_id=exclude_id,
+    )

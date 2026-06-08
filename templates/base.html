@@ -983,6 +983,15 @@
                     </div>
                 {% endif %}
 
+                <div>
+                    <div class="nav-group-title">账户</div>
+                    <nav class="nav-list">
+                        <a class="nav-item {% if request.resolver_match.url_name == 'password-change-request' or request.resolver_match.url_name == 'password-change-confirm' %}active{% endif %}" href="{% url 'password-change-request' %}">
+                            <span class="nav-item-label"><span class="nav-bullet"></span><span>修改密码</span></span>
+                        </a>
+                    </nav>
+                </div>
+
                 <div class="sidebar-footer">
                     <div class="user-card">
                         <div class="user-meta">

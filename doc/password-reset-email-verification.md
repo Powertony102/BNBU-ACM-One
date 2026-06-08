@@ -5,6 +5,7 @@
 为 `One BNBU-ACM` 增加一套可复用的邮箱验证码能力，并先落地在“找回密码”场景中，满足以下目标：
 
 - 用户忘记密码时，可以通过“用户名 + 学校邮箱 + 邮箱验证码”完成密码重置。
+- 用户登录后，可以在当前角色界面直接发起“修改密码”，复用邮箱验证码链路但无需重新填写账号信息。
 - 验证码通过 `Resend` 发送邮件，邮件发送仍走 Django 官方邮件抽象层，便于本地调试与测试。
 - 验证码流程具备最基础的安全控制，包括有效期、冷却时间、最大尝试次数、单次使用。
 
@@ -35,6 +36,11 @@
    - 登录页增加“忘记密码”入口
    - 第一步：填写用户名和学校邮箱，请求发送验证码
    - 第二步：填写验证码和新密码，完成重置
+
+4. 已登录自助改密流程
+   - 在共享应用界面中增加“修改密码”入口，Member、Admin、Super Admin 均可使用
+   - 第一步：直接向当前登录账号绑定邮箱发送验证码
+   - 第二步：填写验证码和新密码，完成当前会话内的改密
    - 重置成功后跳回登录页
 
 4. 测试与文档
@@ -107,6 +113,34 @@
 - 记录审计日志
 - 提示用户密码重置成功并返回登录页
 
+### 4.4 已登录修改密码
+
+页面：
+
+- `/account/password/`
+- `/account/password/confirm/`
+
+交互规则：
+
+- 用户必须已登录
+- 页面直接展示当前账号和绑定邮箱
+- 点击按钮后，系统向当前绑定邮箱发送 6 位验证码
+- 如果当前账号未绑定邮箱，则不允许进入验证码改密流程
+
+确认步骤输入：
+
+- 邮箱验证码
+- 新密码
+- 确认新密码
+
+通过后执行：
+
+- 设置当前用户的新密码
+- 标记验证码已使用
+- 更新当前 session 的认证哈希，避免改密后被立刻登出
+- 记录审计日志
+- 返回原应用界面并提示成功
+
 ## 5. 数据模型设计
 
 建议新增模型：`EmailVerificationCode`
@@ -116,6 +150,7 @@
 - `user`: 关联 `User`
 - `email`: 收件邮箱，冗余保存，便于校验和追踪
 - `purpose`: 验证码用途，首期值为 `password_reset`
+- `purpose`: 验证码用途，当前包括 `password_reset` 和 `password_change`
 - `code`: 存储哈希后的验证码，不存明文
 - `expires_at`: 过期时间
 - `used_at`: 使用时间，空表示未使用
@@ -156,6 +191,11 @@
 - 发送邮件
 - 校验验证码是否正确、过期、已使用、超出尝试次数
 
+并提供两套用途包装：
+
+- 面向未登录用户的 `password_reset`
+- 面向已登录用户的 `password_change`
+
 邮件内容使用 Django 模板渲染：
 
 - `templates/emails/password_reset_code.txt`
@@ -167,6 +207,7 @@
 
 - `PasswordResetRequestForm`
 - `PasswordResetConfirmForm`
+- `PasswordChangeConfirmForm`
 
 职责：
 
@@ -180,11 +221,15 @@
 
 - `password_reset_request_view`
 - `password_reset_confirm_view`
+- `password_change_request_view`
+- `password_change_confirm_view`
 
 新增路由：
 
 - `/password-reset/`
 - `/password-reset/confirm/`
+- `/account/password/`
+- `/account/password/confirm/`
 
 ### 6.5 模板层
 
@@ -192,6 +237,8 @@
 
 - `templates/core/password_reset_request.html`
 - `templates/core/password_reset_confirm.html`
+- `templates/core/password_change_request.html`
+- `templates/core/password_change_confirm.html`
 
 以及邮件模板：
 
@@ -206,6 +253,7 @@
 - 新验证码发出后，旧验证码立即失效
 - 验证码仅可使用一次
 - 仅允许通过已绑定邮箱完成密码找回
+- 已登录改密同样仅允许通过当前账号已绑定邮箱完成
 
 ## 8. 代码落点
 
