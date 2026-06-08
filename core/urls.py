@@ -32,6 +32,7 @@ urlpatterns = [
     path('management/events/<int:event_id>/delete/', views.event_delete, name='event-delete'),
     path('management/events/<int:event_id>/close-check-in/', views.event_close_checkin, name='event-close-checkin'),
     path('management/events/<int:event_id>/generate-qr/', views.generate_qr_entry, name='event-generate-qr'),
+    path('management/events/<int:event_id>/qr-status/', views.event_qr_status, name='event-qr-status'),
     path('management/admins/', views.admin_list_manage, name='admin-list-manage'),
     path('management/admins/<int:admin_profile_id>/edit/', views.admin_edit, name='admin-edit'),
     path('management/admins/<int:admin_profile_id>/toggle-status/', views.admin_toggle_status, name='admin-toggle-status'),
@@ -39,4 +40,6 @@ urlpatterns = [
     path('management/audit-logs/', views.audit_log_list, name='audit-log-list'),
     path('qr/<str:token>/', views.qr_entry, name='qr-entry'),
     path('qr/<str:token>/check-in/', views.qr_checkin, name='qr-checkin'),
+    path('qr/resume/<str:resume_token>/', views.qr_entry_resume, name='qr-entry-resume'),
+    path('qr/resume/<str:resume_token>/check-in/', views.qr_resume_checkin, name='qr-resume-checkin'),
 ]

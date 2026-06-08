@@ -7,7 +7,7 @@
 {% block content %}
 <section class="page-hero">
     <h2>系统设置</h2>
-    <p>这里维护原型阶段最重要的全局参数，包括 ACM Star 判定窗口和二维码签到入口的有效期。</p>
+    <p>这里维护原型阶段最重要的全局参数，包括 ACM Star 判定窗口和动态二维码签到入口的总有效期。</p>
 </section>
 
 <section class="grid">
@@ -24,8 +24,8 @@
             </div>
             <div class="event-item">
                 <div>
-                    <div class="event-item-title">二维码有效期</div>
-                    <div class="event-item-meta">控制新生成签到入口的默认失效时间，单位为分钟。</div>
+                    <div class="event-item-title">签到入口总有效期</div>
+                    <div class="event-item-meta">控制一轮动态二维码签到入口的总失效时间，单位为分钟；展示二维码会每 10 秒自动刷新一次。</div>
                 </div>
             </div>
         </div>

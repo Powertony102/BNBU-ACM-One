@@ -1,6 +1,9 @@
 import base64
+import logging
 import math
-from datetime import timedelta
+import queue
+import threading
+from datetime import datetime, timedelta, timezone as dt_timezone
 from io import BytesIO
 from urllib.parse import urlencode
 
@@ -8,9 +11,10 @@ from django.contrib import messages
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Max, Q
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -42,6 +46,124 @@ from .services import (
     verify_password_change_code,
     verify_password_reset_code,
 )
+
+
+QR_CODE_REFRESH_SECONDS = 10
+QR_LOGIN_RESUME_MAX_AGE_SECONDS = 120
+QR_LOGIN_RESUME_SALT = 'event-qr-login-resume'
+
+logger = logging.getLogger(__name__)
+
+# QR 预生成队列：为每个 event 维护一个内存队列，保证队列中始终有 >= 2 个待选二维码。
+# 使用方式：
+#   1. 管理员点击"生成签到入口"时初始化队列并预生成二维码
+#   2. 前端每 10 秒轮询时从队列直接取出，消除生成延迟
+#   3. 停止签到 / 删除活动时销毁队列
+_qr_queues = {}      # event_id -> queue.Queue[{qr_code, image, entry_url}]
+_qr_queue_locks = {} # event_id -> threading.Lock()
+_qr_url_prefixes = {} # event_id -> "http(s)://host"
+
+
+def _generate_one_qr(event, operator, request, expires_at, url_prefix):
+    """生成单个二维码并返回预构建数据（数据库记录 + 图片 data URI + URL）。"""
+    qr_code = EventQRCode.objects.create(
+        event=event,
+        expires_at=expires_at,
+        created_by=operator,
+    )
+    entry_path = qr_code.get_entry_path()
+    qr_code.url = f'{url_prefix}{entry_path}'
+    qr_code.save(update_fields=['url'])
+    image = build_qr_data_uri(qr_code.url)
+    return {
+        'qr_code': qr_code,
+        'image': image,
+        'entry_url': qr_code.url,
+    }
+
+
+def _refill_queue(event_id, capacity=2):
+    """在后台线程中将队列补充到 capacity 个。"""
+    lock = _qr_queue_locks.get(event_id)
+    if lock is None:
+        return
+    with lock:
+        q = _qr_queues.get(event_id)
+        if q is None:
+            return
+        url_prefix = _qr_url_prefixes.get(event_id, '')
+        while q.qsize() < capacity:
+            try:
+                from .models import Event as _Event
+                event_obj = _Event.objects.filter(pk=event_id).first()
+                if event_obj is None or event_obj.status in {
+                    _Event.Status.CANCELED,
+                    _Event.Status.CHECKIN_CLOSED,
+                }:
+                    break
+                active_qr = event_obj.qr_codes.filter(is_active=True).first()
+                if active_qr is None:
+                    break
+                expires_at = active_qr.expires_at
+                operator = active_qr.created_by
+                data = _generate_one_qr(event_obj, operator, None, expires_at, url_prefix)
+                q.put(data)
+            except Exception:
+                logger.exception('Failed to pre-generate QR code for event %s', event_id)
+                break
+
+
+def _refill_async(event_id, capacity=2):
+    """启动后台线程补充队列。"""
+    t = threading.Thread(target=_refill_queue, args=(event_id, capacity), daemon=True)
+    t.start()
+
+
+def init_event_qr_queue(event, request, expires_at, capacity=2):
+    """初始化事件的二维码预生成队列并立即预填充。"""
+    event_id = event.id
+    if event_id in _qr_queues:
+        return
+    url_prefix = request.build_absolute_uri('/')
+    _qr_url_prefixes[event_id] = url_prefix
+    q = queue.Queue(maxsize=capacity + 2)
+    _qr_queues[event_id] = q
+    _qr_queue_locks[event_id] = threading.Lock()
+    for _ in range(capacity):
+        try:
+            data = _generate_one_qr(event, request.user, request, expires_at, url_prefix)
+            q.put(data)
+        except Exception:
+            logger.exception('Failed to init QR queue for event %s', event_id)
+    if q.qsize() < capacity:
+        _refill_async(event_id, capacity)
+
+
+def clear_event_qr_queue(event_id):
+    """清空并移除事件的二维码预生成队列。"""
+    q = _qr_queues.pop(event_id, None)
+    _qr_queue_locks.pop(event_id, None)
+    _qr_url_prefixes.pop(event_id, None)
+    if q is not None:
+        while not q.empty():
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                break
+
+
+def pop_event_qr_queue(event_id):
+    """从队列中取出下一个预生成的二维码数据，队列不足时异步补充。"""
+    q = _qr_queues.get(event_id)
+    if q is None:
+        return None
+    try:
+        data = q.get_nowait()
+    except queue.Empty:
+        return None
+    if q.qsize() < 2:
+        _refill_async(event_id)
+    return data
 
 
 def log_action(operator, action, target_type, target_id=None, detail=''):
@@ -170,6 +292,81 @@ def build_qr_data_uri(content):
     qr_image.save(buffer, format='PNG')
     encoded = base64.b64encode(buffer.getvalue()).decode('ascii')
     return f'data:image/png;base64,{encoded}'
+
+
+def deactivate_event_qr_codes(event, deactivated_at=None, exclude_id=None):
+    deactivated_at = deactivated_at or timezone.now()
+    qs = event.qr_codes.filter(is_active=True)
+    if exclude_id is not None:
+        qs = qs.exclude(pk=exclude_id)
+    qs.update(is_active=False, deactivated_at=deactivated_at)
+
+
+def issue_event_qr_code(event, operator, request, expires_at):
+    qr_code = EventQRCode.objects.create(
+        event=event,
+        expires_at=expires_at,
+        created_by=operator,
+    )
+    qr_code.url = request.build_absolute_uri(qr_code.get_entry_path())
+    qr_code.save(update_fields=['url'])
+    return qr_code
+
+
+def get_current_event_qr_code(event, operator, request):
+    qr_code = event.qr_codes.filter(is_active=True).first()
+    if not qr_code:
+        return None
+
+    now = timezone.now()
+    if not qr_code.is_valid_at(now):
+        deactivate_event_qr_codes(event, deactivated_at=now)
+        return None
+
+    if now >= qr_code.get_refresh_deadline(QR_CODE_REFRESH_SECONDS):
+        # 优先从预生成队列中取出，避免实时生成的延迟
+        data = pop_event_qr_queue(event.id)
+        if data is not None:
+            deactivate_event_qr_codes(event, deactivated_at=now, exclude_id=data['qr_code'].id)
+            return data['qr_code']
+        deactivate_event_qr_codes(event, deactivated_at=now)
+        return issue_event_qr_code(event, operator or qr_code.created_by, request, qr_code.expires_at)
+
+    if not qr_code.url:
+        qr_code.url = request.build_absolute_uri(qr_code.get_entry_path())
+        qr_code.save(update_fields=['url'])
+    return qr_code
+
+
+def build_qr_resume_token(qr_code, scanned_at=None):
+    scanned_at = scanned_at or timezone.now()
+    return signing.dumps(
+        {
+            'qr_code_id': qr_code.id,
+            'scanned_at': scanned_at.timestamp(),
+        },
+        salt=QR_LOGIN_RESUME_SALT,
+    )
+
+
+def resolve_qr_resume_token(resume_token):
+    try:
+        payload = signing.loads(
+            resume_token,
+            salt=QR_LOGIN_RESUME_SALT,
+            max_age=QR_LOGIN_RESUME_MAX_AGE_SECONDS,
+        )
+    except signing.BadSignature:
+        return None, '本次扫码确认已失效，请重新扫描最新二维码。'
+
+    qr_code = EventQRCode.objects.filter(pk=payload.get('qr_code_id')).select_related('event').first()
+    if qr_code is None:
+        return None, '本次扫码确认已失效，请重新扫描最新二维码。'
+
+    scanned_at = datetime.fromtimestamp(payload['scanned_at'], tz=dt_timezone.utc)
+    if not qr_code.is_valid_at(scanned_at):
+        return None, '当前二维码已经轮换，请重新扫描最新二维码。'
+    return qr_code, None
 
 
 def role_redirect(user):
@@ -719,7 +916,7 @@ def event_detail_manage(request, event_id):
     )
     if not event.can_manage_checkin(request.user):
         return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可访问。')
-    qr_code = event.qr_codes.filter(is_active=True).first()
+    qr_code = get_current_event_qr_code(event, request.user, request)
     all_checkins = (
         event.checkins.select_related('member', 'created_by')
         .order_by('-checkin_time', '-created_at')
@@ -735,6 +932,8 @@ def event_detail_manage(request, event_id):
             'event': event,
             'qr_code': qr_code,
             'qr_code_image': qr_code_image,
+            'qr_refresh_seconds': QR_CODE_REFRESH_SECONDS,
+            'qr_refresh_at': qr_code.get_refresh_deadline(QR_CODE_REFRESH_SECONDS) if qr_code else None,
             'all_checkins': all_checkins,
             'checkin_total': valid_checkins.count(),
             'revoked_checkin_total': all_checkins.filter(status=CheckInRecord.Status.REVOKED).count(),
@@ -774,7 +973,8 @@ def event_delete(request, event_id):
         messages.warning(request, '该活动已经删除过了。')
         return redirect('event-list-manage')
     event.status = Event.Status.CANCELED
-    event.qr_codes.filter(is_active=True).update(is_active=False)
+    deactivate_event_qr_codes(event)
+    clear_event_qr_queue(event_id)
     event.save(update_fields=['status', 'updated_at'])
     log_action(request.user, 'delete_event', 'Event', event.id)
     messages.success(request, '活动已删除，并标记为已作废。')
@@ -789,6 +989,8 @@ def event_close_checkin(request, event_id):
     if not event.can_manage_checkin(request.user):
         return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
     event.status = Event.Status.CHECKIN_CLOSED
+    deactivate_event_qr_codes(event)
+    clear_event_qr_queue(event_id)
     event.save(update_fields=['status', 'updated_at'])
     log_action(request.user, 'close_checkin', 'Event', event.id)
     messages.success(request, '签到已关闭。')
@@ -802,18 +1004,77 @@ def generate_qr_entry(request, event_id):
     event = get_object_or_404(Event, pk=event_id)
     if not event.can_manage_checkin(request.user):
         return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
-    event.qr_codes.filter(is_active=True).update(is_active=False)
+    deactivate_event_qr_codes(event)
+    clear_event_qr_queue(event_id)
     minutes = int(SystemSetting.get_value('qr_code_expire_minutes', '120'))
-    qr_code = EventQRCode.objects.create(
-        event=event,
-        expires_at=timezone.now() + timedelta(minutes=minutes),
-        created_by=request.user,
-    )
-    qr_code.url = request.build_absolute_uri(qr_code.get_entry_path())
-    qr_code.save(update_fields=['url'])
+    expires_at = timezone.now() + timedelta(minutes=minutes)
+    qr_code = issue_event_qr_code(event, request.user, request, expires_at)
+    init_event_qr_queue(event, request, expires_at, capacity=2)
     log_action(request.user, 'generate_qr', 'EventQRCode', qr_code.id, f'event={event.id}')
-    messages.success(request, '活动签到入口已生成。')
+    messages.success(request, f'活动签到入口已生成，二维码将每 {QR_CODE_REFRESH_SECONDS} 秒自动刷新一次。')
     return redirect('event-detail-manage', event_id=event.id)
+
+
+@login_required
+def event_qr_status(request, event_id):
+    event = get_object_or_404(Event, pk=event_id)
+    if not event.can_manage_checkin(request.user):
+        return HttpResponseForbidden('仅管理员、该活动申请人或已指定的签到管理员可操作。')
+
+    current_qr = event.qr_codes.filter(is_active=True).first()
+    now = timezone.now()
+
+    # 当前二维码仍在有效期内且未到刷新时间，直接返回，不消耗队列
+    if current_qr and current_qr.is_valid_at(now) and now < current_qr.get_refresh_deadline(QR_CODE_REFRESH_SECONDS):
+        return JsonResponse(
+            {
+                'active': True,
+                'entry_url': current_qr.url,
+                'image': build_qr_data_uri(current_qr.url),
+                'token_preview': f'{current_qr.token[:16]}...',
+                'refresh_interval_seconds': QR_CODE_REFRESH_SECONDS,
+                'refresh_at': current_qr.get_refresh_deadline(QR_CODE_REFRESH_SECONDS).isoformat(),
+                'expires_at': current_qr.expires_at.isoformat() if current_qr.expires_at else None,
+            }
+        )
+
+    # 到达刷新时间，优先从预生成队列中取出下一个二维码，消除生成延迟
+    data = pop_event_qr_queue(event_id)
+    if data is not None:
+        deactivate_event_qr_codes(event, exclude_id=data['qr_code'].id)
+        qr_code = data['qr_code']
+        return JsonResponse(
+            {
+                'active': True,
+                'entry_url': data['entry_url'],
+                'image': data['image'],
+                'token_preview': f'{qr_code.token[:16]}...',
+                'refresh_interval_seconds': QR_CODE_REFRESH_SECONDS,
+                'refresh_at': qr_code.get_refresh_deadline(QR_CODE_REFRESH_SECONDS).isoformat(),
+                'expires_at': qr_code.expires_at.isoformat() if qr_code.expires_at else None,
+            }
+        )
+
+    qr_code = get_current_event_qr_code(event, request.user, request)
+    if qr_code is None:
+        return JsonResponse(
+            {
+                'active': False,
+                'refresh_interval_seconds': QR_CODE_REFRESH_SECONDS,
+            }
+        )
+
+    return JsonResponse(
+        {
+            'active': True,
+            'entry_url': qr_code.url,
+            'image': build_qr_data_uri(qr_code.url),
+            'token_preview': f'{qr_code.token[:16]}...',
+            'refresh_interval_seconds': QR_CODE_REFRESH_SECONDS,
+            'refresh_at': qr_code.get_refresh_deadline(QR_CODE_REFRESH_SECONDS).isoformat(),
+            'expires_at': qr_code.expires_at.isoformat() if qr_code.expires_at else None,
+        }
+    )
 
 
 @login_required
@@ -1078,14 +1339,7 @@ def audit_log_list(request):
     return render(request, 'core/management/audit_logs.html', {'logs': logs, 'query': query})
 
 
-def qr_entry(request, token):
-    qr_code = get_object_or_404(EventQRCode, token=token)
-    if not qr_code.is_valid():
-        return render(request, 'core/qr_invalid.html', {'reason': '二维码已失效或被停用。'})
-    if not request.user.is_authenticated:
-        return redirect_to_login(request.get_full_path(), login_url=reverse('login'))
-    if not require_member(request.user):
-        return render(request, 'core/qr_invalid.html', {'reason': '只有队员账号可以签到。'})
+def render_qr_entry_page(request, qr_code, post_url):
     profile = get_object_or_404(MemberProfile, user=request.user)
     existing_checkin = CheckInRecord.objects.filter(
         member=profile,
@@ -1100,7 +1354,52 @@ def qr_entry(request, token):
             'event': qr_code.event,
             'existing_checkin': existing_checkin,
             'is_checkin_open': qr_code.event.is_checkin_open(),
+            'post_url': post_url,
+            'qr_refresh_seconds': QR_CODE_REFRESH_SECONDS,
+            'qr_resume_window_seconds': QR_LOGIN_RESUME_MAX_AGE_SECONDS,
         },
+    )
+
+
+def complete_qr_checkin(request, qr_code, redirect_url):
+    event = qr_code.event
+    profile = get_object_or_404(MemberProfile, user=request.user)
+    if not event.is_checkin_open():
+        messages.error(request, '当前活动未开放签到。')
+        return redirect(redirect_url)
+    if CheckInRecord.objects.filter(
+        member=profile,
+        event=event,
+        status=CheckInRecord.Status.VALID,
+    ).exists():
+        messages.warning(request, '你已经签到过这场活动。')
+        return redirect(redirect_url)
+    checkin = CheckInRecord.objects.create(
+        member=profile,
+        event=event,
+        checkin_method=CheckInRecord.Method.QR,
+        source_qr_code=qr_code,
+        created_by=request.user,
+    )
+    log_action(request.user, 'qr_checkin', 'Event', event.id, f'checkin_id={checkin.id}')
+    messages.success(request, '扫码签到成功。')
+    return redirect(redirect_url)
+
+
+def qr_entry(request, token):
+    qr_code = get_object_or_404(EventQRCode.objects.select_related('event'), token=token)
+    if not qr_code.is_valid():
+        return render(request, 'core/qr_invalid.html', {'reason': '二维码已失效或被停用。'})
+    resume_token = build_qr_resume_token(qr_code)
+    resume_url = reverse('qr-entry-resume', args=[resume_token])
+    if not request.user.is_authenticated:
+        return redirect_to_login(resume_url, login_url=reverse('login'))
+    if not require_member(request.user):
+        return render(request, 'core/qr_invalid.html', {'reason': '只有队员账号可以签到。'})
+    return render_qr_entry_page(
+        request,
+        qr_code,
+        reverse('qr-resume-checkin', args=[resume_token]),
     )
 
 
@@ -1111,25 +1410,33 @@ def qr_checkin(request, token):
     qr_code = get_object_or_404(EventQRCode, token=token)
     if not qr_code.is_valid():
         return render(request, 'core/qr_invalid.html', {'reason': '二维码已失效或被停用。'})
-    event = qr_code.event
-    profile = get_object_or_404(MemberProfile, user=request.user)
-    if not event.is_checkin_open():
-        messages.error(request, '当前活动未开放签到。')
-        return redirect('qr-entry', token=token)
-    if CheckInRecord.objects.filter(
-        member=profile,
-        event=event,
-        status=CheckInRecord.Status.VALID,
-    ).exists():
-        messages.warning(request, '你已经签到过这场活动。')
-        return redirect('qr-entry', token=token)
-    checkin = CheckInRecord.objects.create(
-        member=profile,
-        event=event,
-        checkin_method=CheckInRecord.Method.QR,
-        source_qr_code=qr_code,
-        created_by=request.user,
+    return complete_qr_checkin(request, qr_code, reverse('qr-entry', args=[token]))
+
+
+def qr_entry_resume(request, resume_token):
+    qr_code, reason = resolve_qr_resume_token(resume_token)
+    if reason:
+        return render(request, 'core/qr_invalid.html', {'reason': reason})
+    if not request.user.is_authenticated:
+        return redirect_to_login(reverse('qr-entry-resume', args=[resume_token]), login_url=reverse('login'))
+    if not require_member(request.user):
+        return render(request, 'core/qr_invalid.html', {'reason': '只有队员账号可以签到。'})
+    return render_qr_entry_page(
+        request,
+        qr_code,
+        reverse('qr-resume-checkin', args=[resume_token]),
     )
-    log_action(request.user, 'qr_checkin', 'Event', event.id, f'checkin_id={checkin.id}')
-    messages.success(request, '扫码签到成功。')
-    return redirect('qr-entry', token=token)
+
+
+@login_required
+def qr_resume_checkin(request, resume_token):
+    if request.method != 'POST' or not require_member(request.user):
+        return HttpResponseForbidden('无权操作。')
+    qr_code, reason = resolve_qr_resume_token(resume_token)
+    if reason:
+        return render(request, 'core/qr_invalid.html', {'reason': reason})
+    return complete_qr_checkin(
+        request,
+        qr_code,
+        reverse('qr-entry-resume', args=[resume_token]),
+    )

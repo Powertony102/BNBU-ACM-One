@@ -575,7 +575,7 @@ class AdminUpdateForm(forms.Form):
 
 class SystemSettingsForm(forms.Form):
     star_recent_window_days = forms.IntegerField(label='ACM Star 近期窗口天数', min_value=1, max_value=365)
-    qr_code_expire_minutes = forms.IntegerField(label='二维码有效分钟数', min_value=1, max_value=1440)
+    qr_code_expire_minutes = forms.IntegerField(label='签到入口总有效分钟数', min_value=1, max_value=1440)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

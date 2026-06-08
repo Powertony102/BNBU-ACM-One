@@ -8,6 +8,7 @@
 <section class="page-hero">
     <h2>扫码签到</h2>
     <p>你当前正在为活动“{{ event.title }}”签到。系统已经完成扫码后登录回跳，你可以直接确认签到。</p>
+    <p class="muted">展示中的二维码每 {{ qr_refresh_seconds }} 秒轮换一次；当前页面已保留你本次扫码的短时确认资格，请尽快完成签到。</p>
 </section>
 
 <section class="grid">
@@ -33,10 +34,11 @@
             <p style="margin: 0 0 8px;"><strong>你已经签到过了。</strong></p>
             <p class="muted">{{ existing_checkin.checkin_time|date:"Y-m-d H:i" }} · {{ existing_checkin.get_checkin_method_display }}</p>
         {% elif is_checkin_open %}
-            <form method="post" action="{% url 'qr-checkin' qr_code.token %}">
+            <form method="post" action="{{ post_url }}">
                 {% csrf_token %}
                 <button type="submit">确认扫码签到</button>
             </form>
+            <p class="muted" style="margin: 10px 0 0;">该确认资格最多保留 {{ qr_resume_window_seconds }} 秒，超时后请重新扫描最新二维码。</p>
         {% else %}
             <p><strong>当前不在签到时间窗口。</strong></p>
         {% endif %}

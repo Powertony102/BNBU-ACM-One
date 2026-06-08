@@ -17,6 +17,70 @@
 {% endblock %}
 
 {% block content %}
+<style>
+    .qr-layout {
+        display: flex;
+        align-items: center;
+        gap: 32px;
+        flex-wrap: wrap;
+    }
+
+    .qr-visual {
+        flex: 0 0 auto;
+        display: flex;
+        justify-content: center;
+    }
+
+    .qr-side {
+        flex: 1 1 260px;
+        min-width: 240px;
+        display: grid;
+        gap: 14px;
+    }
+
+    .qr-countdown-card {
+        padding: 18px 18px 16px;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    }
+
+    .qr-countdown-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+        margin: 8px 0 10px;
+    }
+
+    .qr-countdown-value {
+        font-size: clamp(2.4rem, 5vw, 3.2rem);
+        line-height: 0.95;
+        font-weight: 800;
+        letter-spacing: -0.07em;
+        color: #18181b;
+    }
+
+    .qr-meta-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .qr-meta-list p {
+        margin: 0;
+    }
+
+    @media (max-width: 720px) {
+        .qr-layout {
+            gap: 20px;
+        }
+
+        .qr-side {
+            min-width: 100%;
+        }
+    }
+</style>
+
 <section class="page-hero">
     <h2>{{ event.title }}</h2>
     <p>{{ event.description|default:"这场活动暂时还没有描述。" }}</p>
@@ -87,23 +151,114 @@
             <h3>签到入口</h3>
         </div>
         {% if qr_code %}
-            {% if qr_code_image %}
-                <div style="display: flex; justify-content: center; margin-bottom: 16px;">
-                    <img
-                        src="{{ qr_code_image }}"
-                        alt="活动签到二维码"
-                        style="width: 220px; height: 220px; border-radius: 18px; border: 1px solid var(--line); background: #fff; padding: 14px;"
-                    >
+            <div class="qr-layout">
+                {% if qr_code_image %}
+                    <div class="qr-visual">
+                        <img
+                            id="event-qr-image"
+                            src="{{ qr_code_image }}"
+                            alt="活动签到二维码"
+                            style="width: 220px; height: 220px; border-radius: 18px; border: 1px solid var(--line); background: #fff; padding: 14px;"
+                        >
+                    </div>
+                {% endif %}
+                <div class="qr-side">
+                    <div class="qr-countdown-card">
+                        <div class="card-meta">二维码刷新倒计时</div>
+                        <div class="qr-countdown-row">
+                            <div class="qr-countdown-value" id="event-qr-countdown-value">{{ qr_refresh_seconds }}</div>
+                            <span class="pill">秒</span>
+                        </div>
+                        <p class="muted" id="event-qr-countdown-hint">倒计时归零后会自动切换到下一张二维码。</p>
+                    </div>
+
+                    <div class="qr-meta-list">
+                        <div>
+                            <p style="margin: 0 0 10px;"><strong>当前签到链接</strong></p>
+                            <p class="muted" id="event-qr-url" style="word-break: break-all;">{{ qr_code.url }}</p>
+                        </div>
+                        <div>
+                            <p style="margin: 0 0 8px;"><strong>当前入口 token</strong></p>
+                            <p class="muted" id="event-qr-token">{{ qr_code.token|slice:":16" }}...</p>
+                        </div>
+                        <p class="muted" id="event-qr-meta">二维码每 {{ qr_refresh_seconds }} 秒自动刷新，旧码会立即失效；已扫码用户可在短时间内继续完成登录回跳和确认签到。</p>
+                    </div>
                 </div>
-            {% endif %}
-            <p style="margin: 0 0 10px;"><strong>当前签到链接</strong></p>
-            <p class="muted" style="margin: 0 0 12px; word-break: break-all;">{{ qr_code.url }}</p>
-            <p class="muted">现在可以直接展示签到二维码，队员扫码后会进入登录回跳后的活动签到流程。</p>
+            </div>
         {% else %}
             <p class="muted">当前还没有生成签到入口。</p>
         {% endif %}
     </article>
 </section>
+
+{% if qr_code %}
+<script>
+    (() => {
+        const imageElement = document.getElementById('event-qr-image');
+        const urlElement = document.getElementById('event-qr-url');
+        const tokenElement = document.getElementById('event-qr-token');
+        const metaElement = document.getElementById('event-qr-meta');
+        const countdownValueElement = document.getElementById('event-qr-countdown-value');
+        const countdownHintElement = document.getElementById('event-qr-countdown-hint');
+        const endpoint = "{% url 'event-qr-status' event.id %}";
+        const refreshMs = {{ qr_refresh_seconds }} * 1000;
+        let refreshDeadlineMs = Date.parse("{{ qr_refresh_at|date:'c' }}");
+
+        const renderCountdown = () => {
+            if (!Number.isFinite(refreshDeadlineMs)) {
+                countdownValueElement.textContent = '--';
+                countdownHintElement.textContent = '倒计时暂不可用，请重新生成签到入口。';
+                return;
+            }
+
+            const remainingSeconds = Math.max(0, Math.ceil((refreshDeadlineMs - Date.now()) / 1000));
+            countdownValueElement.textContent = remainingSeconds;
+            countdownHintElement.textContent = remainingSeconds === 0
+                ? '正在刷新下一张二维码...'
+                : '倒计时归零后会自动切换到下一张二维码。';
+        };
+
+        const applyQrSnapshot = (payload) => {
+            if (!payload.active) {
+                metaElement.textContent = '当前签到入口已失效，请重新点击“生成签到入口”。';
+                refreshDeadlineMs = Number.NaN;
+                renderCountdown();
+                return;
+            }
+            if (imageElement) {
+                imageElement.src = payload.image;
+            }
+            urlElement.textContent = payload.entry_url;
+            tokenElement.textContent = payload.token_preview;
+            metaElement.textContent = `二维码每 ${payload.refresh_interval_seconds} 秒自动刷新，旧码会立即失效；已扫码用户可在短时间内继续完成登录回跳和确认签到。`;
+            refreshDeadlineMs = Date.parse(payload.refresh_at);
+            renderCountdown();
+        };
+
+        const refreshQr = async () => {
+            try {
+                const response = await fetch(endpoint, {
+                    cache: 'no-store',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                if (!response.ok) {
+                    return;
+                }
+                const payload = await response.json();
+                applyQrSnapshot(payload);
+            } catch (error) {
+                console.error('QR refresh failed', error);
+            }
+        };
+
+        renderCountdown();
+        window.setInterval(renderCountdown, 1000);
+        window.setInterval(refreshQr, refreshMs);
+    })();
+</script>
+{% endif %}
 
 {% if can_manage_checkin %}
     <section class="card" style="margin-top: 18px;">

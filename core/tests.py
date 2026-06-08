@@ -1,5 +1,6 @@
 from datetime import timedelta
 import re
+from urllib.parse import parse_qs, urlparse
 
 from django.core import mail
 from django.core.management import call_command
@@ -7,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import AdminProfile, CheckInRecord, EmailVerificationCode, Event, MemberProfile, User
+from .models import AdminProfile, CheckInRecord, EmailVerificationCode, Event, EventQRCode, MemberProfile, User
 
 
 class ACMStarViewsTests(TestCase):
@@ -422,6 +423,26 @@ class EventApplicationWorkflowTests(TestCase):
             created_by=self.member_user,
         )
 
+    def create_live_event(self, title='动态签到活动'):
+        now = timezone.now()
+        return Event.objects.create(
+            title=title,
+            event_type=Event.EventType.TRAINING,
+            description='用于测试动态二维码签到。',
+            location='Lab 305',
+            start_time=now - timedelta(minutes=20),
+            end_time=now + timedelta(hours=2),
+            checkin_start_time=now - timedelta(minutes=15),
+            checkin_end_time=now + timedelta(minutes=45),
+            status=Event.Status.PUBLISHED,
+            applicant=self.member_user,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now - timedelta(hours=1),
+            created_by=self.admin_user,
+            published_at=now - timedelta(hours=1),
+        )
+
     def test_member_can_submit_event_application(self):
         self.client.login(username='2430026001', password='MemberPassword2026!')
         response = self.client.post(
@@ -697,6 +718,74 @@ class EventApplicationWorkflowTests(TestCase):
         self.client.login(username='2430026002', password='MemberPassword2026!')
         detail_response = self.client.get(reverse('event-detail-manage', args=[event.id]))
         self.assertEqual(detail_response.status_code, 403)
+
+    def test_event_qr_status_rotates_stale_code_and_invalidates_old_token(self):
+        event = self.create_live_event()
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        self.client.post(reverse('event-generate-qr', args=[event.id]), follow=True)
+
+        first_qr = EventQRCode.objects.get(event=event, is_active=True)
+        EventQRCode.objects.filter(pk=first_qr.pk).update(
+            created_at=timezone.now() - timedelta(seconds=11),
+        )
+
+        response = self.client.get(reverse('event-qr-status', args=[event.id]))
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        self.assertTrue(payload['active'])
+
+        first_qr.refresh_from_db()
+        self.assertFalse(first_qr.is_active)
+        self.assertIsNotNone(first_qr.deactivated_at)
+
+        current_qr = EventQRCode.objects.get(event=event, is_active=True)
+        self.assertNotEqual(first_qr.token, current_qr.token)
+        self.assertEqual(payload['entry_url'], current_qr.url)
+
+        stale_response = self.client.get(reverse('qr-entry', args=[first_qr.token]))
+        self.assertContains(stale_response, '二维码已失效或被停用。')
+
+    def test_member_can_finish_checkin_via_resume_link_after_qr_rotates(self):
+        event = self.create_live_event(title='扫码登录续接活动')
+        qr_code = EventQRCode.objects.create(
+            event=event,
+            expires_at=timezone.now() + timedelta(minutes=30),
+            created_by=self.admin_user,
+        )
+        qr_code.url = 'http://testserver' + reverse('qr-entry', args=[qr_code.token])
+        qr_code.save(update_fields=['url'])
+
+        first_response = self.client.get(reverse('qr-entry', args=[qr_code.token]))
+        self.assertEqual(first_response.status_code, 302)
+
+        login_redirect = urlparse(first_response.url)
+        resume_path = parse_qs(login_redirect.query)['next'][0]
+        resume_match = re.match(r'^/qr/resume/(?P<token>[^/]+)/$', resume_path)
+        self.assertIsNotNone(resume_match)
+        resume_token = resume_match.group('token')
+
+        EventQRCode.objects.filter(pk=qr_code.pk).update(
+            is_active=False,
+            deactivated_at=timezone.now(),
+        )
+
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        entry_response = self.client.get(resume_path)
+        self.assertEqual(entry_response.status_code, 200)
+        self.assertContains(entry_response, '确认扫码签到')
+
+        checkin_response = self.client.post(
+            reverse('qr-resume-checkin', args=[resume_token]),
+            follow=True,
+        )
+        self.assertEqual(checkin_response.status_code, 200)
+        self.assertContains(checkin_response, '扫码签到成功。')
+
+        checkin = CheckInRecord.objects.get(event=event, member__user=self.member_user)
+        self.assertEqual(checkin.checkin_method, CheckInRecord.Method.QR)
+        self.assertEqual(checkin.source_qr_code, qr_code)
 
 
 class BootstrapDemoCommandTests(TestCase):

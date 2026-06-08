@@ -1,4 +1,5 @@
 import secrets
+from datetime import timedelta
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
@@ -222,6 +223,7 @@ class EventQRCode(models.Model):
     url = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='created_qr_codes')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -234,11 +236,31 @@ class EventQRCode(models.Model):
         super().save(*args, **kwargs)
 
     def is_valid(self):
-        if not self.is_active:
+        return self.is_active and self.is_valid_at(timezone.now())
+
+    def is_valid_at(self, moment):
+        if moment < self.created_at:
             return False
-        if self.expires_at and timezone.now() > self.expires_at:
+        if self.expires_at and moment > self.expires_at:
+            return False
+        if self.deactivated_at and moment > self.deactivated_at:
             return False
         return True
+
+    def mark_inactive(self, deactivated_at=None):
+        deactivated_at = deactivated_at or timezone.now()
+        update_fields = []
+        if self.is_active:
+            self.is_active = False
+            update_fields.append('is_active')
+        if self.deactivated_at is None:
+            self.deactivated_at = deactivated_at
+            update_fields.append('deactivated_at')
+        if update_fields:
+            self.save(update_fields=update_fields)
+
+    def get_refresh_deadline(self, refresh_seconds):
+        return self.created_at + timedelta(seconds=refresh_seconds)
 
     def get_entry_path(self):
         return reverse('qr-entry', args=[self.token])
