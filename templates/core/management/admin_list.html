@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}管理员管理 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}管理员管理{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">Super Admin 专属能力</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>管理员管理</h2>
+    <p>在这里创建新的管理员账号、区分普通管理员与超级管理员，并控制管理端账号状态。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ admin_total }}</strong>
+            <span>管理员总数</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ super_admin_total }}</strong>
+            <span>超级管理员</span>
+        </div>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>新增管理员</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit">创建管理员</button>
+        </form>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>当前管理员</h3>
+            <span class="card-meta">按级别与名称排序</span>
+        </div>
+        <div class="feed-list">
+            {% for admin_profile in admin_profiles %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ admin_profile.display_name }}</div>
+                        <div class="feed-item-meta">{{ admin_profile.user.username }} · {{ admin_profile.user.email|default:"未填写邮箱" }}</div>
+                        <div class="feed-item-meta">{{ admin_profile.get_admin_level_display }} · {{ admin_profile.get_status_display }}</div>
+                    </div>
+                    <div class="inline-actions">
+                        <a class="button ghost" href="{% url 'admin-edit' admin_profile.id %}">编辑</a>
+                        {% if admin_profile.user_id != request.user.id %}
+                            <form method="post" action="{% url 'admin-toggle-status' admin_profile.id %}">
+                                {% csrf_token %}
+                                <button class="button secondary" type="submit">
+                                    {% if admin_profile.user.is_active %}停用{% else %}启用{% endif %}
+                                </button>
+                            </form>
+                        {% else %}
+                            <span class="badge live">当前账号</span>
+                        {% endif %}
+                    </div>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无管理员资料</div>
+                        <div class="feed-item-meta">创建第一个普通管理员后，会在这里显示。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

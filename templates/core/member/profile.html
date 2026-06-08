@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}个人资料 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}个人资料{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">维护你的队员信息</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>个人资料</h2>
+    <p>学号、角色和账号状态由管理员维护；邮箱、手机号、专业和班级可以由你自己更新。</p>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>基础信息</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>姓名：</strong><span class="muted">{{ profile.real_name }}</span></div>
+            <div><strong>学号：</strong><span class="muted">{{ profile.student_id }}</span></div>
+            <div><strong>账号角色：</strong><span class="muted">{{ request.user.get_role_display }}</span></div>
+            <div><strong>状态：</strong><span class="muted">{{ profile.get_status_display }}</span></div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>可编辑资料</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit">保存修改</button>
+        </form>
+    </article>
+</section>
+{% endblock %}

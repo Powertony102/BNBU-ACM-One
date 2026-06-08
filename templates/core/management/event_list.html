@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}活动管理 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}活动管理{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">活动列表与签到入口管理</div>{% endblock %}
+
+{% block topbar_actions %}
+    <a class="button" href="{% url 'event-create' %}">创建活动</a>
+{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>活动管理</h2>
+    <p>在这里创建、编辑、发布活动，并查看对应的签到入口和签到人数。</p>
+</section>
+
+<section class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>活动</th>
+                <th>时间</th>
+                <th>状态</th>
+                <th>签到人数</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+                <tr>
+                    <td>
+                        <a class="table-title" href="{% url 'event-detail-manage' event.id %}">{{ event.title }}</a>
+                        <div class="table-subtitle">{{ event.location }}</div>
+                    </td>
+                    <td>{{ event.start_time|date:"Y-m-d H:i" }}</td>
+                    <td><span class="badge {% if event.status == 'published' %}live{% else %}dim{% endif %}">{{ event.get_status_display }}</span></td>
+                    <td>{{ event.checkin_total }}</td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="4">还没有活动。</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

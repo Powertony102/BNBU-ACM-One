@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | One BNBU-ACM{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">活动配置</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ page_title }}</h2>
+    <p>这里先实现原型所需的最小活动配置：基本信息、活动时间和签到时间窗口。</p>
+</section>
+
+<section class="card">
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="inline-actions">
+            <button type="submit">保存活动</button>
+            <a class="button ghost" href="{% url 'event-list-manage' %}">返回活动列表</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}活动列表 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}活动{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">队员活动列表</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>活动列表</h2>
+    <p>你可以在这里查看近期活动，并进入详情页完成签到。</p>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h3>全部活动</h3>
+        <span class="card-meta">按时间排序</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>活动</th>
+                <th>时间</th>
+                <th>地点</th>
+                <th>状态</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+                <tr>
+                    <td>
+                        <a class="table-title" href="{% url 'member-event-detail' event.id %}">{{ event.title }}</a>
+                        <div class="table-subtitle">{{ event.get_event_type_display }}</div>
+                    </td>
+                    <td>{{ event.start_time|date:"Y-m-d H:i" }}</td>
+                    <td>{{ event.location }}</td>
+                    <td>
+                        <span class="badge {% if event.is_checkin_open %}live{% else %}dim{% endif %}">
+                            {% if event.is_checkin_open %}签到中{% else %}{{ event.get_status_display }}{% endif %}
+                        </span>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="4">暂无活动。</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

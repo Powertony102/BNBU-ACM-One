@@ -1,0 +1,12 @@
+{% extends "base_guest.html" %}
+
+{% block title %}签到入口不可用 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}签到入口{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">二维码状态说明</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>签到入口不可用</h2>
+    <p>{{ reason }}</p>
+</section>
+{% endblock %}

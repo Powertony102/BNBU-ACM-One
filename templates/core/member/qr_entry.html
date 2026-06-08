@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}扫码签到 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}扫码签到{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">二维码签到入口</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>扫码签到</h2>
+    <p>你当前正在为活动“{{ event.title }}”签到。系统已经完成扫码后登录回跳，你可以直接确认签到。</p>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>活动信息</h3>
+            <span class="badge {% if is_checkin_open %}live{% else %}warn{% endif %}">
+                {% if is_checkin_open %}开放中{% else %}未开放{% endif %}
+            </span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>地点：</strong><span class="muted">{{ event.location }}</span></div>
+            <div><strong>签到窗口：</strong><span class="muted">{{ event.checkin_start_time|date:"Y-m-d H:i" }} - {{ event.checkin_end_time|date:"Y-m-d H:i" }}</span></div>
+            <div><strong>入口 token：</strong><span class="pill">{{ qr_code.token|slice:":16" }}...</span></div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>签到操作</h3>
+        </div>
+        {% if existing_checkin %}
+            <p style="margin: 0 0 8px;"><strong>你已经签到过了。</strong></p>
+            <p class="muted">{{ existing_checkin.checkin_time|date:"Y-m-d H:i" }} · {{ existing_checkin.get_checkin_method_display }}</p>
+        {% elif is_checkin_open %}
+            <form method="post" action="{% url 'qr-checkin' qr_code.token %}">
+                {% csrf_token %}
+                <button type="submit">确认扫码签到</button>
+            </form>
+        {% else %}
+            <p><strong>当前不在签到时间窗口。</strong></p>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

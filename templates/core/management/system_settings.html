@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}系统设置 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}系统设置{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">原型级业务参数</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>系统设置</h2>
+    <p>这里维护原型阶段最重要的全局参数，包括 ACM Star 判定窗口和二维码签到入口的有效期。</p>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>参数说明</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">ACM Star 近期窗口</div>
+                    <div class="event-item-meta">控制多少天内有有效签到时，队员首页的 Star 会保持点亮。</div>
+                </div>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">二维码有效期</div>
+                    <div class="event-item-meta">控制新生成签到入口的默认失效时间，单位为分钟。</div>
+                </div>
+            </div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>参数编辑</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit">保存系统设置</button>
+        </form>
+    </article>
+</section>
+{% endblock %}

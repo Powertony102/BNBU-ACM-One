@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}审计日志 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}审计日志{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">关键操作记录</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>审计日志</h2>
+    <p>这里记录管理员关键行为与系统参数变更，方便后续追踪原型阶段的重要操作。</p>
+</section>
+
+<section class="card" style="margin-bottom: 18px;">
+    <div class="card-header">
+        <h3>筛选日志</h3>
+    </div>
+    <form method="get">
+        <p>
+            <label for="id_q">关键词</label>
+            <input id="id_q" type="text" name="q" value="{{ query }}" placeholder="搜索 action / target / detail / operator">
+        </p>
+        <button type="submit">搜索日志</button>
+    </form>
+</section>
+
+<section class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>时间</th>
+                <th>操作人</th>
+                <th>动作</th>
+                <th>目标</th>
+                <th>详情</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+                <tr>
+                    <td>{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
+                    <td>{{ log.operator.username|default:"system" }}</td>
+                    <td>{{ log.action }}</td>
+                    <td>{{ log.target_type }}{% if log.target_id %} #{{ log.target_id }}{% endif %}</td>
+                    <td>{{ log.detail|default:"-" }}</td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="5">暂时没有符合条件的日志记录。</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

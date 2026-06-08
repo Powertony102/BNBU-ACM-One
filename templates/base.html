@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}One BNBU-ACM{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #f5f5f7;
+            --surface: rgba(255, 255, 255, 0.82);
+            --surface-strong: #ffffff;
+            --surface-soft: #fafafa;
+            --line: #e8e8ec;
+            --line-strong: #d7d7dd;
+            --text: #17171a;
+            --muted: #6e6e76;
+            --muted-soft: #8f8f98;
+            --accent: #111214;
+            --accent-soft: #f1f1f4;
+            --brand: #141416;
+            --success: #e9f8ef;
+            --success-text: #0f6a3f;
+            --warn: #fff5e4;
+            --warn-text: #8b5a12;
+            --danger: #fff1ee;
+            --danger-text: #a03c2d;
+            --shadow: 0 18px 50px rgba(15, 15, 20, 0.06);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 28%),
+                linear-gradient(180deg, #f8f8f9 0%, #f3f3f5 100%);
+            min-height: 100vh;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        button,
+        input,
+        textarea,
+        select {
+            font: inherit;
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-columns: 284px minmax(0, 1fr);
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            padding: 18px 16px;
+            border-right: 1px solid rgba(0, 0, 0, 0.05);
+            background: rgba(248, 248, 250, 0.92);
+            backdrop-filter: blur(18px);
+        }
+
+        .sidebar-inner {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 6px 16px;
+        }
+
+        .brand-mark {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 800;
+            font-size: 1.05rem;
+        }
+
+        .brand-glyph {
+            width: 34px;
+            height: 34px;
+            display: inline-grid;
+            place-items: center;
+            border-radius: 10px;
+            background: var(--brand);
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 800;
+        }
+
+        .version-pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #ffffff;
+            border: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+
+        .nav-group-title {
+            padding: 0 10px;
+            margin-bottom: 8px;
+            color: var(--muted-soft);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+
+        .nav-list {
+            display: grid;
+            gap: 4px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 11px 12px;
+            border-radius: 14px;
+            color: var(--muted);
+            transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.9);
+            color: var(--text);
+            transform: translateX(2px);
+        }
+
+        .nav-item.active {
+            background: #ffffff;
+            color: var(--text);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 8px 24px rgba(18, 18, 22, 0.04);
+        }
+
+        .nav-item-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .nav-bullet {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #c8c8d0;
+            flex: none;
+        }
+
+        .nav-item.active .nav-bullet {
+            background: var(--brand);
+        }
+
+        .nav-note {
+            color: var(--muted-soft);
+            font-size: 0.75rem;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: 12px;
+        }
+
+        .user-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 18px;
+            background: #ffffff;
+            border: 1px solid var(--line);
+        }
+
+        .user-meta {
+            min-width: 0;
+        }
+
+        .user-name {
+            font-weight: 700;
+        }
+
+        .user-role {
+            color: var(--muted);
+            font-size: 0.84rem;
+        }
+
+        .ghost-button {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 10px;
+        }
+
+        .ghost-button:hover {
+            background: var(--accent-soft);
+            color: var(--text);
+        }
+
+        .main-shell {
+            min-width: 0;
+            padding: 18px;
+        }
+
+        .canvas {
+            min-height: calc(100vh - 36px);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.72);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 22px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.76);
+            backdrop-filter: blur(12px);
+        }
+
+        .topbar-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .topbar-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            border: 1.6px solid var(--brand);
+            flex: none;
+        }
+
+        .topbar h1 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .topbar-subtitle {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .content {
+            padding: 26px 28px 34px;
+        }
+
+        .page-hero {
+            padding: 10px 0 24px;
+        }
+
+        .page-hero h2,
+        .page-hero h1 {
+            margin: 0 0 8px;
+            font-size: clamp(2rem, 3vw, 2.8rem);
+            line-height: 1.06;
+            letter-spacing: -0.03em;
+        }
+
+        .page-hero p {
+            max-width: 820px;
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.7;
+            font-size: 1rem;
+        }
+
+        .toolbar,
+        .inline-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .toolbar {
+            margin-top: 20px;
+        }
+
+        .button,
+        button,
+        input[type="submit"] {
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 11px 14px;
+            background: var(--brand);
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .button.secondary,
+        .button.ghost {
+            background: #ffffff;
+            color: var(--text);
+            border-color: var(--line);
+        }
+
+        .button.subtle {
+            background: var(--accent-soft);
+            color: var(--text);
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 14px;
+            margin: 18px 0 22px;
+        }
+
+        .stat-chip strong {
+            display: block;
+            font-size: 1.08rem;
+            margin-bottom: 2px;
+        }
+
+        .stat-chip span {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .quick-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .quick-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: #ffffff;
+            border: 1px solid var(--line);
+            color: var(--text);
+        }
+
+        .quick-link:hover {
+            border-color: var(--line-strong);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 18px;
+        }
+
+        .stack {
+            display: grid;
+            gap: 18px;
+        }
+
+        .card {
+            background: var(--surface-strong);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            padding: 22px;
+            box-shadow: 0 8px 24px rgba(18, 18, 22, 0.03);
+        }
+
+        .card.soft {
+            background: var(--surface-soft);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .card-header h3,
+        .card-header h4,
+        .card h3,
+        .card h4 {
+            margin: 0;
+        }
+
+        .card-meta {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .kpi {
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .star-block {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .star {
+            width: 76px;
+            height: 76px;
+            display: inline-grid;
+            place-items: center;
+            border-radius: 22px;
+            font-size: 2rem;
+            font-weight: 900;
+            color: #111;
+            background: linear-gradient(180deg, #ffe38c 0%, #ffd15b 100%);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+        }
+
+        .star.dim {
+            background: linear-gradient(180deg, #e7e7ea 0%, #d0d0d8 100%);
+            color: #7a7a82;
+        }
+
+        .pill,
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            border: 1px solid var(--line);
+            background: #f4f4f6;
+            color: var(--muted);
+        }
+
+        .badge.live {
+            background: #eef9f1;
+            color: #177245;
+            border-color: #d4eedc;
+        }
+
+        .badge.dim {
+            background: #f3f3f5;
+            color: #777983;
+        }
+
+        .badge.warn {
+            background: #fff6e8;
+            color: #96610f;
+            border-color: #f3dfb8;
+        }
+
+        .event-list,
+        .feed-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .event-item,
+        .feed-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: #fcfcfd;
+        }
+
+        .event-item-title,
+        .feed-item-title {
+            font-weight: 700;
+        }
+
+        .event-item-meta,
+        .feed-item-meta {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 0.92rem;
+            line-height: 1.5;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            color: var(--muted-soft);
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        tbody td {
+            padding: 15px 10px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .table-title {
+            font-weight: 700;
+        }
+
+        .table-subtitle {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        form p {
+            display: grid;
+            gap: 8px;
+            margin: 0 0 16px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #24242b;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid var(--line-strong);
+            background: #ffffff;
+            color: var(--text);
+        }
+
+        .messages {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .message {
+            padding: 13px 16px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: #ffffff;
+        }
+
+        .message.success {
+            background: var(--success);
+            color: var(--success-text);
+            border-color: #d3ecd9;
+        }
+
+        .message.warning {
+            background: var(--warn);
+            color: var(--warn-text);
+            border-color: #f0dfbb;
+        }
+
+        .message.error {
+            background: var(--danger);
+            color: var(--danger-text);
+            border-color: #f1d6d0;
+        }
+
+        @media (max-width: 980px) {
+            .app-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: relative;
+                height: auto;
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+            }
+        }
+
+        @media (max-width: 720px) {
+            .main-shell {
+                padding: 10px;
+            }
+
+            .content {
+                padding: 18px 18px 24px;
+            }
+
+            .topbar {
+                padding: 14px 16px;
+            }
+
+            .card {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="sidebar-inner">
+                <div class="brand-row">
+                    <div class="brand-mark">
+                        <span class="brand-glyph">A</span>
+                        <span>One BNBU-ACM</span>
+                    </div>
+                    <span class="version-pill">Prototype</span>
+                </div>
+
+                {% if request.user.role == 'member' %}
+                    <div>
+                        <div class="nav-group-title">队员端</div>
+                        <nav class="nav-list">
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-dashboard' %}active{% endif %}" href="{% url 'member-dashboard' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-event-list' or request.resolver_match.url_name == 'member-event-detail' %}active{% endif %}" href="{% url 'member-event-list' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>活动</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-checkin-history' %}active{% endif %}" href="{% url 'member-checkin-history' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>签到历史</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-profile' %}active{% endif %}" href="{% url 'member-profile' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>个人资料</span></span>
+                            </a>
+                        </nav>
+                    </div>
+                {% else %}
+                    <div>
+                        <div class="nav-group-title">管理端</div>
+                        <nav class="nav-list">
+                            <a class="nav-item {% if request.resolver_match.url_name == 'management-dashboard' %}active{% endif %}" href="{% url 'management-dashboard' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' %}active{% endif %}" href="{% url 'event-list-manage' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>活动管理</span></span>
+                            </a>
+                            {% if request.user.role == 'super_admin' %}
+                                <a class="nav-item {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' %}active{% endif %}" href="{% url 'admin-list-manage' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>管理员管理</span></span>
+                                </a>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>系统设置</span></span>
+                                </a>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'audit-log-list' %}active{% endif %}" href="{% url 'audit-log-list' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>审计日志</span></span>
+                                </a>
+                            {% endif %}
+                        </nav>
+                    </div>
+
+                    <div>
+                        <div class="nav-group-title">当前能力</div>
+                        <div class="nav-list">
+                            <div class="nav-item">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>二维码入口</span></span>
+                                <span class="nav-note">已接通</span>
+                            </div>
+                            <div class="nav-item">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 规则</span></span>
+                                <span class="nav-note">已接通</span>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+
+                <div class="sidebar-footer">
+                    <div class="user-card">
+                        <div class="user-meta">
+                            <div class="user-name">{{ request.user.username }}</div>
+                            <div class="user-role">{{ request.user.get_role_display }}</div>
+                        </div>
+                        <form method="post" action="{% url 'logout' %}">
+                            {% csrf_token %}
+                            <button class="ghost-button" type="submit">退出</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-shell">
+            <div class="canvas">
+                <header class="topbar">
+                    <div class="topbar-title">
+                        <span class="topbar-dot"></span>
+                        <div>
+                            <h1>{% block topbar_title %}主页{% endblock %}</h1>
+                            {% block topbar_subtitle %}{% endblock %}
+                        </div>
+                    </div>
+                    {% block topbar_actions %}{% endblock %}
+                </header>
+
+                <div class="content">
+                    {% if messages %}
+                        <div class="messages">
+                            {% for message in messages %}
+                                <div class="message {{ message.tags }}">{{ message }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

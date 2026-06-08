@@ -1,0 +1,16 @@
+{% extends "base_guest.html" %}
+
+{% block title %}登录 | One BNBU-ACM{% endblock %}
+
+{% block content %}
+<h2>登录系统</h2>
+<p>使用你的 ACM 团队账号进入 One BNBU-ACM 原型。</p>
+<form method="post" style="margin-top: 8px;">
+    {% csrf_token %}
+    {% if next %}
+        <input type="hidden" name="next" value="{{ next }}">
+    {% endif %}
+    {{ form.as_p }}
+    <button type="submit">进入系统</button>
+</form>
+{% endblock %}

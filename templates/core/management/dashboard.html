@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}管理首页 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}主页{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">管理工作台</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>欢迎回来，管理者</h2>
+    <p>这里是 ACM 活动签到原型的管理工作台。你可以在这里查看团队活跃度、管理活动，并生成签到入口。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ recent_event_count }}</strong>
+            <span>近期活动</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ today_checkin_count }}</strong>
+            <span>今日签到</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ lit_members }}</strong>
+            <span>Star 点亮人数</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ active_members }}</strong>
+            <span>活跃队员</span>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'event-list-manage' %}">活动管理</a>
+        <a class="quick-link" href="{% url 'event-create' %}">创建活动</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>运营概况</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">近期活动数</div>
+                    <div class="event-item-meta">当前已进入未来时间区间的活动总量。</div>
+                </div>
+                <div class="kpi">{{ recent_event_count }}</div>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">今日签到数</div>
+                    <div class="event-item-meta">今天新增的有效签到记录。</div>
+                </div>
+                <div class="kpi">{{ today_checkin_count }}</div>
+            </div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>活跃度摘要</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">ACM Star</div>
+                    <div class="event-item-meta">当前满足近期活跃条件的队员数量。</div>
+                </div>
+                <span class="badge live">{{ lit_members }} 人</span>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">活跃队员</div>
+                    <div class="event-item-meta">当前处于启用状态的队员人数。</div>
+                </div>
+                <span class="badge">{{ active_members }} 人</span>
+            </div>
+        </div>
+    </article>
+</section>
+{% endblock %}

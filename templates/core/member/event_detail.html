@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}活动详情 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}活动详情{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">{{ event.title }}</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ event.title }}</h2>
+    <p>{{ event.description|default:"这场活动暂时还没有补充描述。" }}</p>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>活动信息</h3>
+            <span class="badge {% if is_checkin_open %}live{% else %}dim{% endif %}">
+                {% if is_checkin_open %}签到中{% else %}{{ event.get_status_display }}{% endif %}
+            </span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>类型：</strong><span class="muted">{{ event.get_event_type_display }}</span></div>
+            <div><strong>地点：</strong><span class="muted">{{ event.location }}</span></div>
+            <div><strong>活动时间：</strong><span class="muted">{{ event.start_time|date:"Y-m-d H:i" }} - {{ event.end_time|date:"Y-m-d H:i" }}</span></div>
+            <div><strong>签到时间：</strong><span class="muted">{{ event.checkin_start_time|date:"Y-m-d H:i" }} - {{ event.checkin_end_time|date:"Y-m-d H:i" }}</span></div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>签到状态</h3>
+        </div>
+        {% if existing_checkin %}
+            <p style="margin: 0 0 8px;"><strong>你已完成签到</strong></p>
+            <p class="muted">{{ existing_checkin.checkin_time|date:"Y-m-d H:i" }} · {{ existing_checkin.get_checkin_method_display }}</p>
+        {% elif is_checkin_open %}
+            <p style="margin: 0 0 14px;"><strong>当前处于可签到时间窗口</strong></p>
+            <form method="post" action="{% url 'member-event-checkin' event.id %}">
+                {% csrf_token %}
+                <button type="submit">立即签到</button>
+            </form>
+        {% else %}
+            <p style="margin: 0 0 8px;"><strong>当前不可签到</strong></p>
+            <p class="muted">请等待签到窗口开放，或联系管理员确认活动状态。</p>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

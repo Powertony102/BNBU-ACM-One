@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}编辑管理员 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}编辑管理员{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">{{ admin_profile.display_name }}</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>编辑管理员</h2>
+    <p>你正在编辑账号 `{{ admin_profile.user.username }}` 的显示名称、级别、资料状态与登录状态。</p>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>账号摘要</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>用户名：</strong><span class="muted">{{ admin_profile.user.username }}</span></div>
+            <div><strong>当前级别：</strong><span class="muted">{{ admin_profile.get_admin_level_display }}</span></div>
+            <div><strong>当前状态：</strong><span class="muted">{{ admin_profile.get_status_display }}</span></div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>编辑表单</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="inline-actions">
+                <button type="submit">保存修改</button>
+                <a class="button ghost" href="{% url 'admin-list-manage' %}">返回管理员列表</a>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

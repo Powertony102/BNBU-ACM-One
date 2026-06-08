@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}One BNBU-ACM{% endblock %}</title>
+    <style>
+        :root {
+            --text: #17171a;
+            --muted: #6e6e76;
+            --line: #e8e8ec;
+            --shadow: 0 18px 50px rgba(15, 15, 20, 0.06);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 28%),
+                linear-gradient(180deg, #f8f8f9 0%, #f3f3f5 100%);
+        }
+
+        .version-pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.78);
+            font-size: 0.78rem;
+        }
+
+        .auth-shell {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .auth-card {
+            width: min(960px, 100%);
+            display: grid;
+            grid-template-columns: 1.2fr 0.92fr;
+            border-radius: 30px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: var(--shadow);
+        }
+
+        .auth-side {
+            padding: 42px;
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 32%),
+                linear-gradient(180deg, #151518, #232329);
+            color: #ffffff;
+        }
+
+        .auth-side h1 {
+            margin: 22px 0 10px;
+            font-size: clamp(2rem, 4vw, 3rem);
+            line-height: 1.04;
+            letter-spacing: -0.04em;
+        }
+
+        .auth-side p {
+            margin: 0;
+            max-width: 420px;
+            color: rgba(255, 255, 255, 0.74);
+            line-height: 1.7;
+        }
+
+        .auth-highlights {
+            margin-top: 28px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .auth-highlight {
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.88);
+        }
+
+        .auth-form {
+            padding: 42px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .auth-form h2 {
+            margin: 0;
+            font-size: 1.55rem;
+        }
+
+        .auth-form p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        form p {
+            display: grid;
+            gap: 8px;
+            margin: 0 0 16px;
+        }
+
+        input,
+        textarea,
+        select,
+        button {
+            font: inherit;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid #d7d7dd;
+            background: #ffffff;
+            color: var(--text);
+        }
+
+        button {
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 11px 14px;
+            background: #141416;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .messages {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .message {
+            padding: 13px 16px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: #ffffff;
+        }
+
+        @media (max-width: 980px) {
+            .auth-card {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .auth-form,
+            .auth-side {
+                padding: 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-shell">
+        <div class="auth-card">
+            <div class="auth-side">
+                <span class="version-pill">One BNBU-ACM</span>
+                <h1>BNBU ACM 活动签到系统</h1>
+                <p>参考你喜欢的校内工具风格，我们把原型收敛成了更安静、更规整的应用界面，适合活动、签到和团队运营场景。</p>
+                <div class="auth-highlights">
+                    <div class="auth-highlight">队员端：看 Star、看活动、改资料、完成签到</div>
+                    <div class="auth-highlight">管理端：建活动、发签到入口、看统计、控流程</div>
+                    <div class="auth-highlight">二维码链路：扫码后登录，再回到签到页完成签到</div>
+                </div>
+            </div>
+            <div class="auth-form">
+                {% if messages %}
+                    <div class="messages">
+                        {% for message in messages %}
+                            <div class="message {{ message.tags }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

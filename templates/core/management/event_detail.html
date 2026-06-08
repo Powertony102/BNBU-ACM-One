@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}活动详情管理 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}活动详情{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">{{ event.title }}</div>{% endblock %}
+
+{% block topbar_actions %}
+    <a class="button ghost" href="{% url 'event-edit' event.id %}">编辑活动</a>
+{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ event.title }}</h2>
+    <p>{{ event.description|default:"这场活动暂时还没有描述。" }}</p>
+    <div class="toolbar">
+        {% if event.status != 'published' %}
+            <form method="post" action="{% url 'event-publish' event.id %}">
+                {% csrf_token %}
+                <button type="submit">发布活动</button>
+            </form>
+        {% endif %}
+        {% if event.status == 'published' %}
+            <form method="post" action="{% url 'event-close-checkin' event.id %}">
+                {% csrf_token %}
+                <button class="button subtle" type="submit">关闭签到</button>
+            </form>
+        {% endif %}
+        <form method="post" action="{% url 'event-generate-qr' event.id %}">
+            {% csrf_token %}
+            <button class="button secondary" type="submit">生成签到入口</button>
+        </form>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>活动信息</h3>
+            <span class="badge {% if event.status == 'published' %}live{% else %}dim{% endif %}">{{ event.get_status_display }}</span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>类型：</strong><span class="muted">{{ event.get_event_type_display }}</span></div>
+            <div><strong>地点：</strong><span class="muted">{{ event.location }}</span></div>
+            <div><strong>活动时间：</strong><span class="muted">{{ event.start_time|date:"Y-m-d H:i" }} - {{ event.end_time|date:"Y-m-d H:i" }}</span></div>
+            <div><strong>签到时间：</strong><span class="muted">{{ event.checkin_start_time|date:"Y-m-d H:i" }} - {{ event.checkin_end_time|date:"Y-m-d H:i" }}</span></div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>签到入口</h3>
+        </div>
+        {% if qr_code %}
+            {% if qr_code_image %}
+                <div style="display: flex; justify-content: center; margin-bottom: 16px;">
+                    <img
+                        src="{{ qr_code_image }}"
+                        alt="活动签到二维码"
+                        style="width: 220px; height: 220px; border-radius: 18px; border: 1px solid var(--line); background: #fff; padding: 14px;"
+                    >
+                </div>
+            {% endif %}
+            <p style="margin: 0 0 10px;"><strong>当前签到链接</strong></p>
+            <p class="muted" style="margin: 0 0 12px; word-break: break-all;">{{ qr_code.url }}</p>
+            <p class="muted">现在可以直接展示签到二维码，队员扫码后会进入登录回跳后的活动签到流程。</p>
+        {% else %}
+            <p class="muted">当前还没有生成签到入口。</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="card" style="margin-top: 18px;">
+    <div class="card-header">
+        <h3>最近签到记录</h3>
+        <span class="pill">有效签到 {{ checkin_total }} 人</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>队员</th>
+                <th>时间</th>
+                <th>方式</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for checkin in valid_checkins %}
+                <tr>
+                    <td>{{ checkin.member.real_name }}</td>
+                    <td>{{ checkin.checkin_time|date:"Y-m-d H:i" }}</td>
+                    <td>{{ checkin.get_checkin_method_display }}</td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="3">暂时还没有签到记录。</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
