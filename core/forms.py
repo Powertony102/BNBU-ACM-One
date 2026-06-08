@@ -4,9 +4,35 @@ from django.contrib.auth.forms import AuthenticationForm
 from .models import AdminProfile, Event, MemberProfile, User
 
 
+def apply_widget_attrs(fields):
+    text_like_widgets = (
+        forms.TextInput,
+        forms.EmailInput,
+        forms.PasswordInput,
+        forms.NumberInput,
+        forms.Textarea,
+        forms.DateTimeInput,
+        forms.Select,
+    )
+    for field in fields.values():
+        widget = field.widget
+        attrs = widget.attrs.copy()
+        if isinstance(widget, text_like_widgets):
+            attrs.setdefault('placeholder', field.label)
+        if isinstance(widget, forms.DateTimeInput):
+            attrs.setdefault('step', 60)
+        widget.attrs = attrs
+
+
 class LoginForm(AuthenticationForm):
     username = forms.CharField(label='用户名')
     password = forms.CharField(label='密码', widget=forms.PasswordInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['username'].widget.attrs['autocomplete'] = 'username'
+        self.fields['password'].widget.attrs['autocomplete'] = 'current-password'
 
 
 class MemberProfileForm(forms.ModelForm):
@@ -19,6 +45,10 @@ class MemberProfileForm(forms.ModelForm):
             'major': '专业',
             'class_name': '班级',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
 
 
 class EventForm(forms.ModelForm):
@@ -54,6 +84,10 @@ class EventForm(forms.ModelForm):
             'status': '状态',
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+
     def clean(self):
         cleaned_data = super().clean()
         start_time = cleaned_data.get('start_time')
@@ -75,6 +109,14 @@ class AdminCreateForm(forms.Form):
     password1 = forms.CharField(label='初始密码', widget=forms.PasswordInput)
     password2 = forms.CharField(label='确认密码', widget=forms.PasswordInput)
     is_active = forms.BooleanField(label='账号启用', required=False, initial=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['username'].widget.attrs['autocomplete'] = 'username'
+        self.fields['email'].widget.attrs['autocomplete'] = 'email'
+        self.fields['password1'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['password2'].widget.attrs['autocomplete'] = 'new-password'
 
     def clean_username(self):
         username = self.cleaned_data['username']
@@ -98,7 +140,16 @@ class AdminUpdateForm(forms.Form):
     status = forms.ChoiceField(label='资料状态', choices=AdminProfile.Status.choices)
     is_active = forms.BooleanField(label='账号启用', required=False)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['email'].widget.attrs['autocomplete'] = 'email'
+
 
 class SystemSettingsForm(forms.Form):
     star_recent_window_days = forms.IntegerField(label='ACM Star 近期窗口天数', min_value=1, max_value=365)
     qr_code_expire_minutes = forms.IntegerField(label='二维码有效分钟数', min_value=1, max_value=1440)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)

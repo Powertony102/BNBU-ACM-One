@@ -6,10 +6,17 @@
     <title>{% block title %}One BNBU-ACM{% endblock %}</title>
     <style>
         :root {
-            --text: #17171a;
-            --muted: #6e6e76;
-            --line: #e8e8ec;
-            --shadow: 0 18px 50px rgba(15, 15, 20, 0.06);
+            --background: #f6f7f9;
+            --foreground: #09090b;
+            --card: #ffffff;
+            --muted-foreground: #71717a;
+            --border: #e4e4e7;
+            --input: #e4e4e7;
+            --primary: #18181b;
+            --primary-foreground: #fafafa;
+            --secondary: #f4f4f5;
+            --ring: rgba(24, 24, 27, 0.14);
+            --shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 10px 32px rgba(15, 23, 42, 0.05);
         }
 
         * {
@@ -19,20 +26,21 @@
         body {
             margin: 0;
             min-height: 100vh;
-            font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
-            color: var(--text);
+            font-family: "SF Pro Display", "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+            color: var(--foreground);
             background:
-                radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 28%),
-                linear-gradient(180deg, #f8f8f9 0%, #f3f3f5 100%);
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.96), transparent 24%),
+                linear-gradient(180deg, #fafafa 0%, var(--background) 100%);
         }
 
         .version-pill {
             padding: 6px 10px;
             border-radius: 999px;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.15);
-            color: rgba(255,255,255,0.78);
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.18);
+            color: rgba(255,255,255,0.82);
             font-size: 0.78rem;
+            font-weight: 600;
         }
 
         .auth-shell {
@@ -46,10 +54,10 @@
             width: min(960px, 100%);
             display: grid;
             grid-template-columns: 1.2fr 0.92fr;
-            border-radius: 30px;
+            border-radius: 24px;
             overflow: hidden;
             background: rgba(255, 255, 255, 0.88);
-            border: 1px solid rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(228, 228, 231, 0.95);
             box-shadow: var(--shadow);
         }
 
@@ -57,7 +65,7 @@
             padding: 42px;
             background:
                 radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 32%),
-                linear-gradient(180deg, #151518, #232329);
+                linear-gradient(180deg, #111113, #27272a);
             color: #ffffff;
         }
 
@@ -86,6 +94,7 @@
             border-radius: 16px;
             background: rgba(255, 255, 255, 0.08);
             color: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .auth-form {
@@ -103,7 +112,7 @@
 
         .auth-form p {
             margin: 0;
-            color: var(--muted);
+            color: var(--muted-foreground);
         }
 
         form p {
@@ -125,18 +134,57 @@
             width: 100%;
             padding: 12px 14px;
             border-radius: 14px;
-            border: 1px solid #d7d7dd;
-            background: #ffffff;
-            color: var(--text);
+            min-height: 40px;
+            border: 1px solid var(--input);
+            background: var(--card);
+            color: var(--foreground);
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) inset;
         }
 
         button {
+            min-height: 40px;
             border: 1px solid transparent;
-            border-radius: 12px;
-            padding: 11px 14px;
-            background: #141416;
-            color: #fff;
+            border-radius: 10px;
+            padding: 10px 14px;
+            background: var(--primary);
+            color: var(--primary-foreground);
             cursor: pointer;
+            font-weight: 600;
+            transition: background 0.16s ease, box-shadow 0.16s ease;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+
+        button:hover {
+            background: #27272a;
+        }
+
+        input:focus-visible,
+        textarea:focus-visible,
+        select:focus-visible,
+        button:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px var(--ring);
+        }
+
+        .helptext {
+            color: #a1a1aa;
+            font-size: 0.84rem;
+            line-height: 1.5;
+        }
+
+        .errorlist {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            color: #b91c1c;
+            font-size: 0.88rem;
+        }
+
+        .errorlist li {
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid #fecaca;
+            background: #fef2f2;
         }
 
         .messages {
@@ -147,9 +195,9 @@
 
         .message {
             padding: 13px 16px;
-            border-radius: 14px;
-            border: 1px solid var(--line);
-            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--card);
         }
 
         @media (max-width: 980px) {
