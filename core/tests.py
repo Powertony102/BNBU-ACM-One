@@ -1461,6 +1461,13 @@ class ContestRatingTests(TestCase):
         profile = MemberCompetitionProfile.objects.get(member=self.member_profile)
         self.assertGreater(profile.current_rating, 0)
 
+    def test_member_submission_form_hides_evidence_url_field(self):
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        response = self.client.get(reverse('member-contest-submission-apply'))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, '证据链接')
+        self.assertNotContains(response, 'name="evidence_url"', html=False)
+
     def test_member_team_create_submission_can_be_approved(self):
         teammate_user = User.objects.create_user(
             username='contest-member-4',

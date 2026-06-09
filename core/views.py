@@ -1196,7 +1196,7 @@ def member_contest_submission_apply(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
     profile = get_object_or_404(MemberProfile, user=request.user)
-    form = ContestSubmissionForm(applicant_profile=profile, data=request.POST or None)
+    form = ContestSubmissionForm(applicant_profile=profile, show_evidence_url=False, data=request.POST or None)
     if request.method == 'POST' and form.is_valid():
         submission = form.save(commit=False)
         submission.applicant = request.user

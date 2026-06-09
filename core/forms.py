@@ -785,7 +785,7 @@ class MemberTeamSubmissionForm(forms.ModelForm):
             'team_name': '队伍名称',
         }
 
-    def __init__(self, applicant_profile=None, *args, **kwargs):
+    def __init__(self, applicant_profile=None, show_evidence_url=True, *args, **kwargs):
         self.applicant_profile = applicant_profile
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
@@ -946,7 +946,7 @@ class ContestSubmissionForm(forms.ModelForm):
             'submission_note': '补充说明',
         }
 
-    def __init__(self, applicant_profile=None, *args, **kwargs):
+    def __init__(self, applicant_profile=None, show_evidence_url=True, *args, **kwargs):
         self.applicant_profile = applicant_profile
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
@@ -976,8 +976,11 @@ class ContestSubmissionForm(forms.ModelForm):
         self.fields['external_teammates'].widget.attrs['placeholder'] = '用 顿号 分隔，例如 校外队友A、校外队友B'
         self.fields['award_label'].required = False
         self.fields['rank_label'].required = False
-        self.fields['evidence_url'].required = False
         self.fields['submission_note'].required = False
+        if show_evidence_url:
+            self.fields['evidence_url'].required = False
+        else:
+            self.fields.pop('evidence_url')
 
     def clean_external_teammates(self):
         return self.cleaned_data['external_teammates'].strip()
