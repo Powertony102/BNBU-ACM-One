@@ -5,6 +5,164 @@
 {% block topbar_subtitle %}<div class="topbar-subtitle">成员自主提交，管理员审核确认</div>{% endblock %}
 
 {% block content %}
+<style>
+    .submission-card {
+        padding: 18px 18px 10px;
+    }
+
+    .submission-table {
+        table-layout: fixed;
+    }
+
+    .submission-table thead th,
+    .submission-table tbody td {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .submission-table thead th:first-child,
+    .submission-table tbody td:first-child {
+        padding-left: 6px;
+    }
+
+    .submission-table th:nth-child(1),
+    .submission-table td:nth-child(1) {
+        width: 23%;
+    }
+
+    .submission-table th:nth-child(2),
+    .submission-table td:nth-child(2) {
+        width: 31%;
+    }
+
+    .submission-table th:nth-child(3),
+    .submission-table td:nth-child(3) {
+        width: 12%;
+    }
+
+    .submission-table th:nth-child(4),
+    .submission-table td:nth-child(4) {
+        width: 13%;
+    }
+
+    .submission-table th:nth-child(5),
+    .submission-table td:nth-child(5) {
+        width: 13%;
+    }
+
+    .submission-table th:nth-child(6),
+    .submission-table td:nth-child(6) {
+        width: 18%;
+    }
+
+    .submission-table tbody td {
+        padding-top: 16px;
+        padding-bottom: 16px;
+        vertical-align: middle;
+    }
+
+    .submission-table tbody tr:hover td {
+        background: rgba(250, 250, 250, 0.72);
+    }
+
+    .submission-primary {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .submission-team {
+        gap: 4px;
+    }
+
+    .submission-note,
+    .submission-result {
+        color: #52525b;
+        line-height: 1.6;
+    }
+
+    .submission-members {
+        color: var(--muted-foreground);
+        font-size: 0.88rem;
+        line-height: 1.55;
+        word-break: break-word;
+    }
+
+    .table-title {
+        font-size: 0.98rem;
+        font-weight: 700;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
+    .table-subtitle {
+        color: var(--muted-foreground);
+        font-size: 0.88rem;
+        line-height: 1.55;
+        word-break: break-word;
+    }
+
+    .submission-status-cell,
+    .submission-action-cell {
+        white-space: nowrap;
+    }
+
+    .submission-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .submission-action-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        padding: 0 10px;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        color: #27272a;
+        font-size: 0.9rem;
+        font-weight: 600;
+        line-height: 1;
+    }
+
+    .submission-action-link:hover {
+        background: #fafafa;
+        border-color: var(--border);
+    }
+
+    .submission-actions .button.subtle {
+        min-height: 34px;
+        padding: 8px 10px;
+        border-radius: 9px;
+        font-size: 0.88rem;
+    }
+
+    .submission-empty {
+        padding: 32px 6px 26px;
+        color: var(--muted-foreground);
+        text-align: center;
+    }
+
+    @media (max-width: 1200px) {
+        .submission-table th:nth-child(4),
+        .submission-table td:nth-child(4) {
+            width: 16%;
+        }
+
+        .submission-table th:nth-child(5),
+        .submission-table td:nth-child(5) {
+            width: 14%;
+        }
+
+        .submission-table th:nth-child(6),
+        .submission-table td:nth-child(6) {
+            width: 20%;
+        }
+    }
+</style>
 <section class="page-hero">
     <h2>我的赛事奖项申报</h2>
     <p>你可以在这里提交自己的赛事获奖信息。管理员会核对并可修改最终内容，审核通过后才会正式进入竞赛档案和天梯。</p>
@@ -14,12 +172,12 @@
     </div>
 </section>
 
-<section class="card">
+<section class="card submission-card">
     <div class="card-header">
         <h3>申报记录</h3>
         <span class="pill">{{ submissions|length }} 条</span>
     </div>
-    <table>
+    <table class="submission-table">
         <thead>
             <tr>
                 <th>赛事</th>
@@ -34,42 +192,51 @@
             {% for submission in submissions %}
                 <tr>
                     <td>
-                        <div class="table-title">{{ submission.contest_name }}</div>
-                        <div class="table-subtitle">{{ submission.contest_date|date:"Y-m-d" }}{% if submission.contest_stage %} · {{ submission.contest_stage }}{% endif %}</div>
-                    </td>
-                    <td>
-                        <div class="table-title">{{ submission.team_name }}</div>
-                        <div class="table-subtitle">
-                            {% if submission.linked_member_team %}关联队伍：{{ submission.linked_member_team.name }} · {% endif %}
-                            {% for member in submission.team_members.all %}
-                                {{ member.real_name }}{% if not forloop.last %}、{% endif %}
-                            {% endfor %}
-                            {% if submission.external_teammates %} · {{ submission.external_teammates }}{% endif %}
+                        <div class="submission-primary">
+                            <div class="table-title">{{ submission.contest_name }}</div>
+                            <div class="table-subtitle">{{ submission.contest_date|date:"Y-m-d" }}{% if submission.contest_stage %} · {{ submission.contest_stage }}{% endif %}</div>
                         </div>
                     </td>
                     <td>
+                        <div class="submission-primary submission-team">
+                            <div class="table-title">{{ submission.team_name }}</div>
+                            <div class="submission-members">
+                                {% if submission.linked_member_team %}关联队伍：{{ submission.linked_member_team.name }}{% endif %}
+                                {% if submission.team_members.all %}
+                                    {% if submission.linked_member_team %} · {% endif %}
+                                    {% for member in submission.team_members.all %}
+                                        {{ member.real_name }}{% if not forloop.last %}、{% endif %}
+                                    {% endfor %}
+                                {% endif %}
+                                {% if submission.external_teammates %} · {{ submission.external_teammates }}{% endif %}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="submission-status-cell">
                         <span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% else %}dim{% endif %}">
                             {{ submission.get_review_status_display }}
                         </span>
                     </td>
-                    <td>{{ submission.review_note|default:"等待审核结果" }}</td>
+                    <td class="submission-note">{{ submission.review_note|default:"等待审核结果" }}</td>
                     <td>
                         {% if submission.resolved_result %}
-                            <span class="muted">{{ submission.resolved_result.display_award_label }}</span>
+                            <span class="submission-result">{{ submission.resolved_result.display_award_label }}</span>
                         {% else %}
-                            <span class="muted">尚未落库</span>
+                            <span class="submission-result muted">尚未落库</span>
                         {% endif %}
                     </td>
-                    <td>
-                        <a href="{% url 'member-contest-submission-detail' submission.id %}">查看详情</a>
+                    <td class="submission-action-cell">
+                        <div class="submission-actions">
+                        <a href="{% url 'member-contest-submission-detail' submission.id %}" class="submission-action-link">查看详情</a>
                         {% if submission.review_status == 'pending' %}
-                            <a href="{% url 'member-contest-submission-withdraw' submission.id %}" class="button subtle" style="margin-left: 8px;">撤回</a>
+                            <a href="{% url 'member-contest-submission-withdraw' submission.id %}" class="button subtle">撤回</a>
                         {% endif %}
+                        </div>
                     </td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="6">你还没有提交赛事奖项申报。</td>
+                    <td colspan="6" class="submission-empty">你还没有提交赛事奖项申报。</td>
                 </tr>
             {% endfor %}
         </tbody>
