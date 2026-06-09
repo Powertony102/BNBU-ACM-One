@@ -1468,6 +1468,30 @@ class ContestRatingTests(TestCase):
         self.assertNotContains(response, '证据链接')
         self.assertNotContains(response, 'name="evidence_url"', html=False)
 
+    def test_review_form_keeps_submission_contest_date_value(self):
+        submission = ContestSubmission.objects.create(
+            applicant=self.member_user,
+            contest_name='日期回填测试',
+            contest_series=Contest.Series.CCPC,
+            contest_season='2026',
+            contest_stage='校内',
+            contest_date=timezone.datetime(2026, 6, 9).date(),
+            organizer='BNBU-ACM',
+            contest_level=Contest.Level.CAMPUS,
+            team_name='日期测试队',
+            award_type=ContestResult.AwardType.PARTICIPATION,
+            award_label='测试',
+            rank_label='第一',
+            result_tier=ContestResult.ResultTier.CHAMPION,
+            submission_note='BNBU-ACM',
+        )
+        submission.team_members.add(self.member_profile)
+
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        response = self.client.get(reverse('contest-submission-detail-manage', args=[submission.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="2026-06-09"', html=False)
+
     def test_member_team_create_submission_can_be_approved(self):
         teammate_user = User.objects.create_user(
             username='contest-member-4',

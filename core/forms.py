@@ -893,7 +893,11 @@ class ContestResultForm(forms.ModelForm):
 
 
 class ContestSubmissionForm(forms.ModelForm):
-    contest_date = forms.DateField(label='比赛日期', widget=forms.DateInput(attrs={'type': 'date'}))
+    contest_date = forms.DateField(
+        label='比赛日期',
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
+        input_formats=['%Y-%m-%d'],
+    )
     linked_member_team = forms.ModelChoiceField(
         label='选择队伍（可选）',
         queryset=MemberTeam.objects.none(),
