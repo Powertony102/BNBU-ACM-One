@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}系列管理 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}系列管理{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">维护活动系列与 Rating 规则</div>{% endblock %}
+
+{% block topbar_actions %}
+    <a class="button" href="{% url 'event-series-create' %}">创建系列</a>
+{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>系列管理</h2>
+    <p>这里维护活动系列本身，包括基础信息、预期活动数，以及该系列是否参与 ACM Rating。活动创建页里选择的“所属系列”就来自这里。</p>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'event-create' %}">创建活动</a>
+        <a class="quick-link" href="{% url 'event-list-manage' %}">返回活动管理</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>筛选条件</h3>
+        </div>
+        <form method="get">
+            <p>
+                <label for="id_q">搜索</label>
+                <input id="id_q" type="text" name="q" value="{{ query }}" placeholder="系列名称 / 描述">
+            </p>
+            <p>
+                <label for="id_status">状态</label>
+                <select id="id_status" name="status">
+                    <option value="">全部状态</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">应用筛选</button>
+                <a class="quick-link" href="{% url 'event-series-list-manage' %}">重置</a>
+            </div>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>系列列表</h3>
+            <span class="pill">{{ series_list|length }} 个</span>
+        </div>
+        <div class="event-list">
+            {% for series in series_list %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">{{ series.title }}</div>
+                        <div class="event-item-meta">
+                            {{ series.get_series_type_display }}
+                            {% if series.start_date or series.end_date %}
+                                · {{ series.start_date|default:"未设置" }} 至 {{ series.end_date|default:"未设置" }}
+                            {% endif %}
+                        </div>
+                        <div class="event-item-meta">
+                            已关联 {{ series.event_total }} 场活动
+                            · 预期 {{ series.expected_event_count }} 场
+                            · 达标成员 {{ series.completed_member_total }} 人
+                        </div>
+                        <div class="event-item-meta">
+                            {% if series.rating_enabled %}
+                                Rating 已启用，需要 {{ series.required_checkins_for_rating }} 次签到，分值 {{ series.rating_points }}
+                            {% else %}
+                                Rating 未启用
+                            {% endif %}
+                        </div>
+                        {% if series.description %}
+                            <div class="event-item-meta">{{ series.description|truncatechars:120 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="inline-actions">
+                        <span class="badge {% if series.status == 'published' %}live{% elif series.status == 'archived' %}dim{% else %}warn{% endif %}">
+                            {{ series.get_status_display }}
+                        </span>
+                        <a class="button ghost" href="{% url 'event-series-edit' series.id %}">编辑</a>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">还没有系列</div>
+                        <div class="event-item-meta">先创建系列，活动创建页里的“所属系列”下拉框才会有可选项。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

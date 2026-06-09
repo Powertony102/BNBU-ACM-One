@@ -744,6 +744,51 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertContains(response, '填写系列内序号前，请先选择所属系列。')
         self.assertFalse(Event.objects.filter(title='缺少系列的活动').exists())
 
+    def test_event_create_page_uses_series_picker_modal(self):
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.get(reverse('event-create'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '搜索选择系列')
+        self.assertContains(response, '选择所属系列')
+        self.assertNotContains(response, '<select name="series"', html=False)
+
+    def test_event_edit_page_prefills_datetime_local_values(self):
+        event_start = timezone.now() + timedelta(days=6)
+        event = Event.objects.create(
+            title='待编辑时间活动',
+            event_type=Event.EventType.LECTURE,
+            description='用于测试时间回填。',
+            location='Lab 603',
+            start_time=event_start,
+            end_time=event_start + timedelta(hours=2),
+            checkin_start_time=event_start - timedelta(minutes=5),
+            checkin_end_time=event_start + timedelta(minutes=15),
+            status=Event.Status.DRAFT,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=timezone.now(),
+            created_by=self.admin_user,
+        )
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.get(reverse('event-edit', args=[event.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{timezone.localtime(event.start_time).strftime("%Y-%m-%dT%H:%M")}"', html=False)
+        self.assertContains(response, f'value="{timezone.localtime(event.end_time).strftime("%Y-%m-%dT%H:%M")}"', html=False)
+        self.assertContains(response, f'value="{timezone.localtime(event.checkin_start_time).strftime("%Y-%m-%dT%H:%M")}"', html=False)
+        self.assertContains(response, f'value="{timezone.localtime(event.checkin_end_time).strftime("%Y-%m-%dT%H:%M")}"', html=False)
+
+    def test_event_create_page_includes_default_checkin_window_logic(self):
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.get(reverse('event-create'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'syncDefaultCheckinWindow', html=False)
+        self.assertContains(response, '5 * 60 * 1000', html=False)
+        self.assertContains(response, '15 * 60 * 1000', html=False)
+
     def test_admin_can_soft_delete_existing_event(self):
         event = Event.objects.create(
             title='待删除活动',
@@ -854,6 +899,147 @@ class BootstrapDemoCommandTests(TestCase):
         self.assertEqual(superadmin.email, 'superadmin@mail.bnbu.edu.cn')
         self.assertEqual(member.email, 'member01@example.com')
         self.assertEqual(member.member_profile.email, 'member01@example.com')
+
+
+class EventSeriesManagementTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username='series-admin',
+            password='AdminPassword2026!',
+            email='series-admin@mail.bnbu.edu.cn',
+            role=User.Roles.ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=self.admin_user,
+            display_name='系列管理员',
+            admin_level=AdminProfile.Level.ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+        self.member_user = User.objects.create_user(
+            username='2430026120',
+            password='MemberPassword2026!',
+            email='u430026120@mail.bnbu.edu.cn',
+            role=User.Roles.MEMBER,
+        )
+        self.member_profile = MemberProfile.objects.create(
+            user=self.member_user,
+            real_name='系列队员',
+            student_id='2430026120',
+            email='u430026120@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        self.series = EventSeries.objects.create(
+            title='春季专题训练',
+            description='系列管理测试。',
+            series_type=EventSeries.SeriesType.TRAINING,
+            status=EventSeries.Status.PUBLISHED,
+            expected_event_count=6,
+            required_checkins_for_rating=2,
+            rating_enabled=True,
+            rating_points=50,
+            created_by=self.admin_user,
+        )
+        event_time = timezone.now() - timedelta(days=2)
+        self.event = Event.objects.create(
+            title='专题训练 1',
+            event_type=Event.EventType.TRAINING,
+            description='用于测试系列编辑后的同步。',
+            location='Lab 801',
+            series=self.series,
+            series_order=1,
+            start_time=event_time,
+            end_time=event_time + timedelta(hours=2),
+            checkin_start_time=event_time - timedelta(minutes=15),
+            checkin_end_time=event_time + timedelta(hours=1),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=event_time - timedelta(hours=1),
+            created_by=self.admin_user,
+            published_at=event_time - timedelta(hours=1),
+        )
+
+    def test_management_can_create_event_series(self):
+        self.client.login(username='series-admin', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('event-series-create'),
+            {
+                'title': '秋季集训系列',
+                'description': '用于测试创建。',
+                'series_type': EventSeries.SeriesType.LECTURE,
+                'status': EventSeries.Status.DRAFT,
+                'start_date': '2026-09-01',
+                'end_date': '2026-12-31',
+                'expected_event_count': 12,
+                'required_checkins_for_rating': 6,
+                'rating_enabled': 'on',
+                'rating_points': 180,
+            },
+            follow=True,
+        )
+        self.assertRedirects(response, reverse('event-series-list-manage'))
+
+        created_series = EventSeries.objects.get(title='秋季集训系列')
+        self.assertEqual(created_series.created_by, self.admin_user)
+        self.assertEqual(created_series.rating_points, 180)
+        self.assertTrue(created_series.rating_enabled)
+        self.assertContains(response, '活动系列已创建。')
+        self.assertContains(response, '秋季集训系列')
+
+    def test_member_cannot_access_event_series_management(self):
+        self.client.login(username='2430026120', password='MemberPassword2026!')
+        list_response = self.client.get(reverse('event-series-list-manage'))
+        create_response = self.client.get(reverse('event-series-create'))
+        edit_response = self.client.get(reverse('event-series-edit', args=[self.series.id]))
+
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(create_response.status_code, 403)
+        self.assertEqual(edit_response.status_code, 403)
+
+    def test_editing_event_series_resyncs_completion_and_rating(self):
+        CheckInRecord.objects.create(
+            member=self.member_profile,
+            event=self.event,
+            checkin_time=timezone.now() - timedelta(days=2),
+            checkin_method=CheckInRecord.Method.WEB,
+            status=CheckInRecord.Status.VALID,
+            created_by=self.member_user,
+        )
+        completion = sync_event_series_completion(self.member_profile, self.series)
+        profile = sync_member_competition_profile(self.member_profile)
+
+        self.assertFalse(completion.is_completed_for_rating)
+        self.assertEqual(profile.current_rating, 0)
+
+        self.client.login(username='series-admin', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('event-series-edit', args=[self.series.id]),
+            {
+                'title': self.series.title,
+                'description': self.series.description,
+                'series_type': self.series.series_type,
+                'status': self.series.status,
+                'start_date': '',
+                'end_date': '',
+                'expected_event_count': self.series.expected_event_count,
+                'required_checkins_for_rating': 1,
+                'rating_enabled': 'on',
+                'rating_points': 80,
+            },
+            follow=True,
+        )
+        self.assertRedirects(response, reverse('event-series-list-manage'))
+
+        completion.refresh_from_db()
+        profile.refresh_from_db()
+        self.assertTrue(completion.is_completed_for_rating)
+        self.assertEqual(completion.valid_checkin_count, 1)
+        self.assertEqual(completion.rating_delta, 80)
+        self.assertEqual(profile.current_rating, 80)
+        self.assertContains(response, '活动系列已更新。')
 
 
 class ContestRatingTests(TestCase):

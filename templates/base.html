@@ -1010,6 +1010,9 @@
                             <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' %}active{% endif %}" href="{% url 'event-list-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>活动管理</span></span>
                             </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'event-series-list-manage' or request.resolver_match.url_name == 'event-series-create' or request.resolver_match.url_name == 'event-series-edit' %}active{% endif %}" href="{% url 'event-series-list-manage' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>系列管理</span></span>
+                            </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'management-star-analytics' %}active{% endif %}" href="{% url 'management-star-analytics' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 统计</span></span>
                             </a>

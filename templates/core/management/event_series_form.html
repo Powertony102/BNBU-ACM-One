@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | One BNBU-ACM{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">系列基础信息与 Rating 规则</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ page_title }}</h2>
+    <p>在这里维护系列的生命周期、预期活动数量，以及该系列是否会对成员的 ACM Rating 产生影响。</p>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>配置说明</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">活动归属</div>
+                    <div class="event-item-meta">活动创建或编辑时选择“所属系列”后，就会归到这里，并可填写系列内序号。</div>
+                </div>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">Rating 联动</div>
+                    <div class="event-item-meta">修改签到达标门槛、启用状态或分值后，系统会同步刷新该系列相关成员的完成状态与竞赛档案。</div>
+                </div>
+            </div>
+            {% if series %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">当前关联活动</div>
+                        <div class="event-item-meta">这个系列当前已关联 {{ series.event_total }} 场活动。</div>
+                    </div>
+                    <a class="button ghost" href="{% url 'event-list-manage' %}">查看活动</a>
+                </div>
+            {% endif %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>系列信息</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">{{ submit_label }}</button>
+                <a class="quick-link" href="{% url 'event-series-list-manage' %}">返回系列列表</a>
+                <a class="quick-link" href="{% url 'event-create' %}">去创建活动</a>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

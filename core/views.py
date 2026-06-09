@@ -40,6 +40,7 @@ from .forms import (
     EventApplicationForm,
     EventForm,
     EventReviewForm,
+    EventSeriesForm,
     LoginForm,
     ManualCheckInForm,
     MemberTeamSubmissionForm,
@@ -62,6 +63,7 @@ from .models import (
     Event,
     EventQRCode,
     EventSeries,
+    EventSeriesCompletion,
     MemberTeam,
     MemberTeamSubmission,
     MemberCompetitionProfile,
@@ -238,6 +240,19 @@ def sync_series_completions_for_event_members(event, series_ids=None):
     for member in members:
         for series in series_map.values():
             sync_series_completion_for_member(member, series)
+
+
+def sync_series_completions_for_series(series):
+    member_ids = set(
+        MemberProfile.objects.filter(checkins__event__series=series).values_list('id', flat=True)
+    )
+    member_ids.update(
+        EventSeriesCompletion.objects.filter(series=series).values_list('member_id', flat=True)
+    )
+    if not member_ids:
+        return
+    for member in MemberProfile.objects.filter(id__in=member_ids):
+        sync_series_completion_for_member(member, series)
 
 
 def get_star_window_days():
@@ -485,6 +500,25 @@ def build_checkin_manager_choices(queryset):
             'major': user.member_profile.major,
         }
         for user in queryset
+    ]
+
+
+def build_event_series_choices(queryset):
+    return [
+        {
+            'id': series.id,
+            'title': series.title,
+            'description': series.description,
+            'series_type': series.get_series_type_display(),
+            'status': series.get_status_display(),
+            'expected_event_count': series.expected_event_count,
+            'rating_enabled': series.rating_enabled,
+            'rating_points': series.rating_points,
+            'required_checkins_for_rating': series.required_checkins_for_rating,
+            'start_date': series.start_date.isoformat() if series.start_date else '',
+            'end_date': series.end_date.isoformat() if series.end_date else '',
+        }
+        for series in queryset
     ]
 
 
@@ -1924,6 +1958,86 @@ def event_list_manage(request):
 
 
 @login_required
+def event_series_list_manage(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    query = request.GET.get('q', '').strip()
+    selected_status = request.GET.get('status', '').strip()
+    series_list = EventSeries.objects.annotate(
+        event_total=Count('events', distinct=True),
+        completed_member_total=Count(
+            'completions',
+            filter=Q(completions__is_completed_for_rating=True),
+            distinct=True,
+        ),
+    )
+    if query:
+        series_list = series_list.filter(
+            Q(title__icontains=query)
+            | Q(description__icontains=query)
+        )
+    if selected_status:
+        series_list = series_list.filter(status=selected_status)
+    return render(
+        request,
+        'core/management/event_series_list.html',
+        {
+            'series_list': series_list.order_by('-created_at', 'title'),
+            'query': query,
+            'selected_status': selected_status,
+            'status_choices': EventSeries.Status.choices,
+        },
+    )
+
+
+@login_required
+def event_series_create(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    form = EventSeriesForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        series = form.save(commit=False)
+        series.created_by = request.user
+        series.save()
+        log_action(request.user, 'create_event_series', 'EventSeries', series.id)
+        messages.success(request, '活动系列已创建。')
+        return redirect('event-series-list-manage')
+    return render(
+        request,
+        'core/management/event_series_form.html',
+        {
+            'form': form,
+            'page_title': '创建系列',
+            'submit_label': '保存系列',
+        },
+    )
+
+
+@login_required
+def event_series_edit(request, series_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    series = get_object_or_404(EventSeries.objects.annotate(event_total=Count('events', distinct=True)), pk=series_id)
+    form = EventSeriesForm(request.POST or None, instance=series)
+    if request.method == 'POST' and form.is_valid():
+        series = form.save()
+        sync_series_completions_for_series(series)
+        log_action(request.user, 'edit_event_series', 'EventSeries', series.id)
+        messages.success(request, '活动系列已更新。')
+        return redirect('event-series-list-manage')
+    return render(
+        request,
+        'core/management/event_series_form.html',
+        {
+            'form': form,
+            'page_title': '编辑系列',
+            'series': series,
+            'submit_label': '保存修改',
+        },
+    )
+
+
+@login_required
 def event_create(request):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
@@ -1947,6 +2061,8 @@ def event_create(request):
         {
             'form': form,
             'page_title': '创建活动',
+            'event_series_choices': build_event_series_choices(form.fields['series'].queryset),
+            'selected_series_id': str(form['series'].value() or ''),
             'checkin_manager_choices': build_checkin_manager_choices(form.fields['checkin_managers'].queryset),
             'selected_checkin_manager_ids': form['checkin_managers'].value() or [],
         },
@@ -1979,6 +2095,8 @@ def event_edit(request, event_id):
         {
             'form': form,
             'page_title': '编辑活动',
+            'event_series_choices': build_event_series_choices(form.fields['series'].queryset),
+            'selected_series_id': str(form['series'].value() or ''),
             'checkin_manager_choices': build_checkin_manager_choices(form.fields['checkin_managers'].queryset),
             'selected_checkin_manager_ids': form['checkin_managers'].value() or [],
         },

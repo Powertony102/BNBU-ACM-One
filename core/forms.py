@@ -30,6 +30,7 @@ SCHOOL_EMAIL_EXAMPLE = 't330026083@mail.bnbu.edu.cn'
 SCHOOL_EMAIL_DOMAIN = '@mail.bnbu.edu.cn'
 USERNAME_PATTERN = re.compile(r'^\d{10}$')
 MAJOR_CODE_PATTERN = re.compile(r'^[A-Z]{2,10}$')
+DATETIME_LOCAL_FORMAT = '%Y-%m-%dT%H:%M'
 
 
 def normalize_major_code(value):
@@ -383,15 +384,25 @@ class EventForm(forms.ModelForm):
         help_text='最多可指定 5 名 Member 管理该活动的签到二维码、完整签到名单、补签与撤销。',
         widget=forms.MultipleHiddenInput(),
     )
-    start_time = forms.DateTimeField(label='开始时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
-    end_time = forms.DateTimeField(label='结束时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
+    start_time = forms.DateTimeField(
+        label='开始时间',
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
+    )
+    end_time = forms.DateTimeField(
+        label='结束时间',
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
+    )
     checkin_start_time = forms.DateTimeField(
         label='签到开始时间',
-        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
     )
     checkin_end_time = forms.DateTimeField(
         label='签到结束时间',
-        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
     )
     series_order = forms.IntegerField(label='系列内序号', min_value=1, required=False)
 
@@ -491,6 +502,11 @@ class EventSeriesForm(forms.ModelForm):
         apply_widget_attrs(self.fields)
         self.fields['start_date'].widget = forms.DateInput(attrs={'type': 'date'})
         self.fields['end_date'].widget = forms.DateInput(attrs={'type': 'date'})
+        self.fields['description'].help_text = '可填写该系列的安排、目标人群或阶段说明。'
+        self.fields['expected_event_count'].help_text = '用于约束活动里的系列内序号上限。'
+        self.fields['required_checkins_for_rating'].help_text = '达到该签到次数后，系列积分才会计入 ACM Rating。'
+        self.fields['rating_enabled'].help_text = '关闭后，该系列不会为成员竞赛档案贡献 Rating。'
+        self.fields['rating_points'].help_text = '仅在开启“参与 Rating”时生效。'
 
     def clean(self):
         cleaned_data = super().clean()
@@ -502,15 +518,25 @@ class EventSeriesForm(forms.ModelForm):
 
 
 class EventApplicationForm(forms.ModelForm):
-    start_time = forms.DateTimeField(label='开始时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
-    end_time = forms.DateTimeField(label='结束时间', widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
+    start_time = forms.DateTimeField(
+        label='开始时间',
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
+    )
+    end_time = forms.DateTimeField(
+        label='结束时间',
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
+    )
     checkin_start_time = forms.DateTimeField(
         label='签到开始时间',
-        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
     )
     checkin_end_time = forms.DateTimeField(
         label='签到结束时间',
-        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
     )
 
     class Meta:

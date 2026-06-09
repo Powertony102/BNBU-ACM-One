@@ -12,6 +12,10 @@
 <section class="page-hero">
     <h2>活动管理</h2>
     <p>在这里创建、编辑、发布活动，并审核成员提交的活动申请。审核通过后，申请人和已指定的签到管理员都可以管理该活动的签到。</p>
+    <div class="quick-links" style="margin-top: 18px;">
+        <a class="quick-link" href="{% url 'event-series-list-manage' %}">管理系列</a>
+        <a class="quick-link" href="{% url 'event-series-create' %}">创建系列</a>
+    </div>
     <div class="stats-row">
         <div class="stat-chip">
             <strong>{{ pending_application_total }}</strong>

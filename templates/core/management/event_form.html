@@ -168,6 +168,7 @@
                 {{ hidden }}
             {% endif %}
         {% endfor %}
+        <input type="hidden" name="series" id="id_series" value="{{ selected_series_id|default:'' }}">
         <div id="checkin-manager-hidden-inputs">
             {% for value in selected_checkin_manager_ids %}
                 <input type="hidden" name="checkin_managers" value="{{ value }}">
@@ -199,12 +200,23 @@
         </div>
 
         <div class="form-row">
-            {{ form.series.label_tag }}
-            {{ form.series }}
-            {{ form.series.errors }}
+            <label for="event-series-open">{{ form.series.label }}</label>
+            <div class="picker-shell">
+                <button class="button picker-trigger" type="button" id="event-series-open">
+                    <span id="event-series-label">未指定</span>
+                    <span>搜索选择系列</span>
+                </button>
+                <div class="picker-meta" id="event-series-meta">当前未指定所属系列。</div>
+                <div class="picker-selection-note" id="event-series-note">可单选 1 个活动系列</div>
+                {{ form.series.errors }}
+            </div>
             {% if form.series.help_text %}
                 <span class="helptext">{{ form.series.help_text }}</span>
             {% endif %}
+            <div class="inline-actions" style="margin-top: 10px;">
+                <a class="quick-link" href="{% url 'event-series-list-manage' %}">管理系列</a>
+                <a class="quick-link" href="{% url 'event-series-create' %}">新建系列</a>
+            </div>
         </div>
 
         <div class="form-row">
@@ -267,6 +279,24 @@
     </form>
 </section>
 
+<div class="picker-modal" id="event-series-modal" hidden>
+    <div class="picker-panel">
+        <div class="picker-header">
+            <h3 style="margin: 0;">选择所属系列</h3>
+            <p class="muted" style="margin: 8px 0 0;">可按系列名称、描述或类型搜索，单击即可选中；如不需要归入系列，也可以清空。</p>
+        </div>
+        <div class="picker-search">
+            <input id="event-series-search" type="search" placeholder="搜索系列名称 / 描述 / 类型">
+        </div>
+        <div class="picker-list" id="event-series-list"></div>
+        <div class="picker-footer">
+            <span class="picker-selection-note" id="event-series-footer-note">可单选 1 个活动系列</span>
+            <button class="button ghost" type="button" id="event-series-clear">清空系列</button>
+            <button class="button secondary" type="button" id="event-series-close">关闭</button>
+        </div>
+    </div>
+</div>
+
 <div class="picker-modal" id="checkin-manager-modal" hidden>
     <div class="picker-panel">
         <div class="picker-header">
@@ -285,10 +315,162 @@
     </div>
 </div>
 
+{{ event_series_choices|json_script:"event-series-options" }}
+{{ selected_series_id|json_script:"selected-event-series-id" }}
 {{ checkin_manager_choices|json_script:"checkin-manager-options" }}
 {{ selected_checkin_manager_ids|json_script:"selected-checkin-manager-ids" }}
 <script>
     (() => {
+        const seriesInput = document.getElementById('id_series');
+        const startTimeInput = document.getElementById('id_start_time');
+        const checkinStartInput = document.getElementById('id_checkin_start_time');
+        const checkinEndInput = document.getElementById('id_checkin_end_time');
+        const seriesOpenButton = document.getElementById('event-series-open');
+        const seriesCloseButton = document.getElementById('event-series-close');
+        const seriesClearButton = document.getElementById('event-series-clear');
+        const seriesModal = document.getElementById('event-series-modal');
+        const seriesSearchInput = document.getElementById('event-series-search');
+        const seriesList = document.getElementById('event-series-list');
+        const seriesLabel = document.getElementById('event-series-label');
+        const seriesMeta = document.getElementById('event-series-meta');
+        const seriesNote = document.getElementById('event-series-note');
+        const seriesFooterNote = document.getElementById('event-series-footer-note');
+        const seriesOptions = JSON.parse(document.getElementById('event-series-options').textContent);
+        let selectedSeriesId = String(JSON.parse(document.getElementById('selected-event-series-id').textContent) || '');
+
+        function getSelectedSeries() {
+            return seriesOptions.find((option) => String(option.id) === selectedSeriesId) || null;
+        }
+
+        function syncSelectedSeries() {
+            seriesInput.value = selectedSeriesId;
+            const selected = getSelectedSeries();
+            if (selected) {
+                const ratingText = selected.rating_enabled
+                    ? `Rating ${selected.rating_points} 分，需 ${selected.required_checkins_for_rating} 次签到`
+                    : '不参与 Rating';
+                const periodText = selected.start_date || selected.end_date
+                    ? `${selected.start_date || '未设开始'} 至 ${selected.end_date || '未设结束'}`
+                    : '未设置起止日期';
+                seriesLabel.textContent = selected.title;
+                seriesMeta.textContent = `${selected.series_type} · ${selected.status} · 预期 ${selected.expected_event_count} 场 · ${ratingText} · ${periodText}`;
+                seriesNote.textContent = selected.description || '已选择该系列。';
+                seriesFooterNote.textContent = `当前已选择：${selected.title}`;
+            } else {
+                seriesLabel.textContent = '未指定';
+                seriesMeta.textContent = '当前未指定所属系列。';
+                seriesNote.textContent = '可单选 1 个活动系列';
+                seriesFooterNote.textContent = '可单选 1 个活动系列';
+            }
+        }
+
+        function renderSeriesList(keyword = '') {
+            const query = keyword.trim().toLowerCase();
+            const filtered = seriesOptions.filter((option) => {
+                if (!query) {
+                    return true;
+                }
+                return [option.title, option.description, option.series_type, option.status]
+                    .filter(Boolean)
+                    .some((value) => value.toLowerCase().includes(query));
+            });
+
+            if (!filtered.length) {
+                seriesList.innerHTML = '<div class="picker-meta">没有找到匹配的活动系列。</div>';
+                return;
+            }
+
+            seriesList.innerHTML = filtered.map((option) => {
+                const isSelected = selectedSeriesId === String(option.id);
+                const ratingText = option.rating_enabled
+                    ? `Rating ${option.rating_points} 分 / ${option.required_checkins_for_rating} 次签到达标`
+                    : '不参与 Rating';
+                const descriptionText = option.description || '暂无系列描述';
+                return `
+                    <button
+                        class="picker-option ${isSelected ? 'active' : ''}"
+                        type="button"
+                        data-series-id="${option.id}"
+                        aria-pressed="${isSelected ? 'true' : 'false'}"
+                    >
+                        <strong>${option.title}${isSelected ? ' · 已选择' : ''}</strong>
+                        <span>${option.series_type} · ${option.status} · 预期 ${option.expected_event_count} 场</span>
+                        <span>${ratingText}</span>
+                        <span>${descriptionText}</span>
+                    </button>
+                `;
+            }).join('');
+
+            seriesList.querySelectorAll('[data-series-id]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    selectedSeriesId = button.dataset.seriesId;
+                    syncSelectedSeries();
+                    renderSeriesList(seriesSearchInput.value);
+                    seriesModal.hidden = true;
+                });
+            });
+        }
+
+        seriesOpenButton.addEventListener('click', () => {
+            seriesModal.hidden = false;
+            seriesSearchInput.value = '';
+            renderSeriesList('');
+            seriesSearchInput.focus();
+        });
+
+        seriesCloseButton.addEventListener('click', () => {
+            seriesModal.hidden = true;
+        });
+
+        seriesClearButton.addEventListener('click', () => {
+            selectedSeriesId = '';
+            syncSelectedSeries();
+            renderSeriesList(seriesSearchInput.value);
+        });
+
+        seriesModal.addEventListener('click', (event) => {
+            if (event.target === seriesModal) {
+                seriesModal.hidden = true;
+            }
+        });
+
+        seriesSearchInput.addEventListener('input', () => renderSeriesList(seriesSearchInput.value));
+        syncSelectedSeries();
+
+        function parseDatetimeLocal(value) {
+            if (!value) {
+                return null;
+            }
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? null : parsed;
+        }
+
+        function formatDatetimeLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        function syncDefaultCheckinWindow() {
+            const startDate = parseDatetimeLocal(startTimeInput.value);
+            if (!startDate) {
+                return;
+            }
+            if (!checkinStartInput.value) {
+                checkinStartInput.value = formatDatetimeLocal(new Date(startDate.getTime() - 5 * 60 * 1000));
+            }
+            if (!checkinEndInput.value) {
+                checkinEndInput.value = formatDatetimeLocal(new Date(startDate.getTime() + 15 * 60 * 1000));
+            }
+        }
+
+        startTimeInput.addEventListener('change', syncDefaultCheckinWindow);
+        startTimeInput.addEventListener('input', syncDefaultCheckinWindow);
+        syncDefaultCheckinWindow();
+
         const hiddenInputs = document.getElementById('checkin-manager-hidden-inputs');
         const openButton = document.getElementById('checkin-manager-open');
         const closeButton = document.getElementById('checkin-manager-close');
