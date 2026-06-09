@@ -3,7 +3,7 @@ import logging
 import math
 import queue
 import threading
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, time, timedelta, timezone as dt_timezone
 from io import BytesIO
 from urllib.parse import urlencode
 
@@ -298,71 +298,141 @@ def get_star_level(recent_checkin_count):
     }
 
 
+def get_contest_activity_datetime(contest_date):
+    return timezone.make_aware(
+        datetime.combine(contest_date, time(hour=12)),
+        timezone.get_current_timezone(),
+    )
+
+
+def build_member_star_activity_records(profile, window_start=None):
+    checkin_filters = {
+        'status': CheckInRecord.Status.VALID,
+    }
+    contest_filters = {
+        'verified': True,
+        'contest__status': Contest.Status.PUBLISHED,
+        'team__members': profile,
+    }
+    if window_start is not None:
+        checkin_filters['checkin_time__gte'] = window_start
+        contest_filters['contest__contest_date__gte'] = window_start.date()
+    recent_checkins = list(
+        profile.checkins.filter(**checkin_filters)
+        .select_related('event')
+        .order_by('-checkin_time')
+    )
+    recent_contest_results = list(
+        ContestResult.objects.filter(**contest_filters)
+        .select_related('contest', 'team')
+        .order_by('-contest__contest_date', '-verified_at', '-id')
+        .distinct()
+    )
+    activities = []
+    for checkin in recent_checkins:
+        activities.append(
+            {
+                'kind': 'checkin',
+                'occurred_at': checkin.checkin_time,
+                'occurred_at_text': timezone.localtime(checkin.checkin_time).strftime('%Y-%m-%d %H:%M'),
+                'occurred_at_short_text': timezone.localtime(checkin.checkin_time).strftime('%m-%d'),
+                'title': checkin.event.title,
+                'meta': checkin.get_checkin_method_display(),
+                'badge': '签到',
+                'source_label': '活动签到',
+                'detail': checkin.event.location,
+                'status_label': checkin.get_status_display(),
+                'status_tone': 'live',
+            }
+        )
+    for result in recent_contest_results:
+        occurred_at = get_contest_activity_datetime(result.contest.contest_date)
+        activities.append(
+            {
+                'kind': 'contest',
+                'occurred_at': occurred_at,
+                'occurred_at_text': result.contest.contest_date.strftime('%Y-%m-%d'),
+                'occurred_at_short_text': result.contest.contest_date.strftime('%m-%d'),
+                'title': str(result.contest),
+                'meta': result.display_award_label,
+                'badge': '赛事',
+                'source_label': '赛事参与',
+                'detail': result.team.team_name,
+                'status_label': '已认证',
+                'status_tone': 'warn',
+            }
+        )
+    activities.sort(key=lambda item: item['occurred_at'], reverse=True)
+    return activities
+
+
 def build_member_star_snapshot(profile, window_days=None, window_start=None):
     if window_days is None or window_start is None:
         window_days, window_start = get_star_window()
     now = timezone.now()
-    valid_checkins = profile.checkins.filter(status=CheckInRecord.Status.VALID).select_related('event')
-    recent_checkins = valid_checkins.filter(checkin_time__gte=window_start).order_by('-checkin_time')
-    recent_checkin_count = recent_checkins.count()
-    level = get_star_level(recent_checkin_count)
-    last_valid_checkin = valid_checkins.order_by('-checkin_time').first()
-    latest_recent_checkin = recent_checkins.first()
+    recent_activities = build_member_star_activity_records(profile, window_start)
+    recent_activity_count = len(recent_activities)
+    level = get_star_level(recent_activity_count)
+    latest_recent_activity = recent_activities[0] if recent_activities else None
     expires_at = (
-        latest_recent_checkin.checkin_time + timedelta(days=window_days)
-        if latest_recent_checkin
+        latest_recent_activity['occurred_at'] + timedelta(days=window_days)
+        if latest_recent_activity
         else None
     )
     days_remaining = None
     if expires_at:
         seconds_remaining = max(0, (expires_at - now).total_seconds())
         days_remaining = math.ceil(seconds_remaining / 86400)
-    if recent_checkin_count == 0:
-        next_milestone = f'最近 {window_days} 天内完成 1 次有效签到即可点亮 ACM Star。'
+    if recent_activity_count == 0:
+        next_milestone = f'最近 {window_days} 天内完成 1 次活动签到或赛事参与即可点亮 ACM Star。'
     elif level['next_target']:
         next_milestone = (
-            f"再参与 {max(level['next_target'] - recent_checkin_count, 0)} 次活动，"
+            f"再参与 {max(level['next_target'] - recent_activity_count, 0)} 次活动，"
             f"即可升级到下一档 Star Level。"
         )
     else:
         next_milestone = '你已经处于最高等级，继续保持近期参与节奏即可。'
     return {
-        'lit': recent_checkin_count > 0,
-        'recent_checkin_count': recent_checkin_count,
-        'recent_checkins': recent_checkins[:5],
-        'last_valid_checkin': last_valid_checkin,
-        'latest_recent_checkin': latest_recent_checkin,
+        'lit': recent_activity_count > 0,
+        'recent_activity_count': recent_activity_count,
+        'recent_checkin_count': recent_activity_count,
+        'recent_activities': recent_activities[:5],
+        'recent_checkins': recent_activities[:5],
+        'latest_activity_at': latest_recent_activity['occurred_at'] if latest_recent_activity else None,
+        'latest_activity_title': latest_recent_activity['title'] if latest_recent_activity else None,
+        'latest_activity_type': latest_recent_activity['source_label'] if latest_recent_activity else None,
+        'latest_recent_activity': latest_recent_activity,
+        'latest_recent_checkin': latest_recent_activity,
         'expires_at': expires_at,
         'days_remaining': days_remaining,
         'level': level,
-        'progress_percent': min(recent_checkin_count / 4, 1) * 100,
+        'progress_percent': min(recent_activity_count / 4, 1) * 100,
         'next_milestone': next_milestone,
     }
 
 
 def get_star_holders_queryset(window_start):
-    return (
-        MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
-        .annotate(
-            recent_valid_checkins=Count(
-                'checkins',
-                filter=Q(
-                    checkins__status=CheckInRecord.Status.VALID,
-                    checkins__checkin_time__gte=window_start,
-                ),
-            ),
-            last_valid_checkin=Max(
-                'checkins__checkin_time',
-                filter=Q(
-                    checkins__status=CheckInRecord.Status.VALID,
-                    checkins__checkin_time__gte=window_start,
-                ),
-            ),
-        )
-        .filter(recent_valid_checkins__gt=0)
-        .select_related('user')
-        .order_by('-recent_valid_checkins', '-last_valid_checkin', 'real_name')
+    window_days = get_star_window_days()
+    star_holders = []
+    for profile in MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE).select_related('user'):
+        snapshot = build_member_star_snapshot(profile, window_days=window_days, window_start=window_start)
+        if not snapshot['lit']:
+            continue
+        profile.recent_activity_count = snapshot['recent_activity_count']
+        profile.recent_valid_checkins = snapshot['recent_activity_count']
+        profile.latest_activity_at = snapshot['latest_activity_at']
+        profile.last_valid_checkin = snapshot['latest_activity_at']
+        profile.star_level = snapshot['level']
+        star_holders.append(profile)
+    star_holders.sort(
+        key=lambda holder: (
+            holder.recent_activity_count,
+            holder.latest_activity_at or datetime.min.replace(tzinfo=dt_timezone.utc),
+            holder.real_name,
+        ),
+        reverse=True,
     )
+    return star_holders
 
 
 def build_qr_data_uri(content):
@@ -904,7 +974,7 @@ def member_dashboard(request):
         'star_lit': star_snapshot['lit'],
         'star_snapshot': star_snapshot,
         'window_days': window_days,
-        'recent_checkins': star_snapshot['recent_checkins'],
+        'recent_activities': star_snapshot['recent_activities'],
         'upcoming_events': recent_events,
         'checkin_count': profile.checkins.filter(status=CheckInRecord.Status.VALID).count(),
         'managed_event_total': Event.objects.filter(
@@ -1023,8 +1093,14 @@ def member_checkin_history(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
     profile = get_object_or_404(MemberProfile, user=request.user)
-    checkins = profile.checkins.select_related('event')
-    return render(request, 'core/member/checkin_history.html', {'checkins': checkins})
+    activity_records = build_member_star_activity_records(profile)
+    return render(
+        request,
+        'core/member/checkin_history.html',
+        {
+            'activity_records': activity_records,
+        },
+    )
 
 
 @login_required
@@ -1305,7 +1381,7 @@ def management_dashboard(request):
     window_days, window_start = get_star_window()
     active_members = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE).count()
     star_holders = get_star_holders_queryset(window_start)
-    lit_members = star_holders.count()
+    lit_members = len(star_holders)
     top_competition_members = list(build_competition_ladder_queryset()[:3])
     for entry in top_competition_members:
         entry.level_meta = get_competition_level(entry.current_rating)
@@ -1336,11 +1412,9 @@ def star_analytics(request):
         return HttpResponseForbidden('仅管理员可访问。')
     now = timezone.now()
     window_days, window_start = get_star_window()
-    star_holders = list(get_star_holders_queryset(window_start))
+    star_holders = get_star_holders_queryset(window_start)
     active_members = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
     active_members_total = active_members.count()
-    for holder in star_holders:
-        holder.star_level = get_star_level(holder.recent_valid_checkins)
     level_counts = {'spark': 0, 'pulse': 0, 'radiant': 0}
     major_totals = {}
     class_totals = {}
@@ -1365,7 +1439,7 @@ def star_analytics(request):
         'star_holders_total': len(star_holders),
         'active_members_total': active_members_total,
         'star_ratio': round((len(star_holders) / active_members_total) * 100) if active_members_total else 0,
-        'newly_active_total': sum(1 for holder in star_holders if holder.last_valid_checkin and holder.last_valid_checkin >= now - timedelta(days=7)),
+        'newly_active_total': sum(1 for holder in star_holders if holder.latest_activity_at and holder.latest_activity_at >= now - timedelta(days=7)),
         'spark_total': level_counts['spark'],
         'pulse_total': level_counts['pulse'],
         'radiant_total': level_counts['radiant'],

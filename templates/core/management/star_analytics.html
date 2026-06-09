@@ -7,7 +7,7 @@
 {% block content %}
 <section class="page-hero">
     <h2>ACM Star 拥有者统计</h2>
-    <p>以下统计全部基于最近 {{ window_days }} 天内的有效签到实时计算，用于帮助管理员观察当前点亮人数、等级分布以及拥有者群体的专业和班级构成。</p>
+    <p>以下统计全部基于最近 {{ window_days }} 天内的活跃记录实时计算，用于帮助管理员观察当前点亮人数、等级分布以及拥有者群体的专业和班级构成。</p>
 
     <div class="stats-row">
         <div class="stat-chip">
@@ -38,21 +38,21 @@
             <div class="event-item">
                 <div>
                     <div class="event-item-title">Spark</div>
-                    <div class="event-item-meta">最近窗口内 1 次有效签到。</div>
+                    <div class="event-item-meta">最近窗口内 1 次活跃记录。</div>
                 </div>
                 <span class="badge warn">{{ spark_total }} 人</span>
             </div>
             <div class="event-item">
                 <div>
                     <div class="event-item-title">Pulse</div>
-                    <div class="event-item-meta">最近窗口内 2-3 次有效签到。</div>
+                    <div class="event-item-meta">最近窗口内 2-3 次活跃记录。</div>
                 </div>
                 <span class="badge live">{{ pulse_total }} 人</span>
             </div>
             <div class="event-item">
                 <div>
                     <div class="event-item-title">Radiant</div>
-                    <div class="event-item-meta">最近窗口内 4 次及以上有效签到。</div>
+                    <div class="event-item-meta">最近窗口内 4 次及以上活跃记录。</div>
                 </div>
                 <span class="badge live">{{ radiant_total }} 人</span>
             </div>
@@ -66,11 +66,11 @@
         <div class="insight-list">
             <div class="insight-item">
                 <strong>统计范围</strong>
-                <p>当前仅统计处于启用状态、且在近期窗口内完成过有效签到的队员。</p>
+                <p>当前仅统计处于启用状态、且在近期窗口内完成过签到或赛事参与的队员。</p>
             </div>
             <div class="insight-item">
                 <strong>拥有者定义</strong>
-                <p>至少 1 次近期有效签到即可拥有一枚当前点亮中的 ACM Star。</p>
+                <p>至少 1 次近期活动签到或赛事参与即可拥有一枚当前点亮中的 ACM Star。</p>
             </div>
             <div class="insight-item">
                 <strong>管理价值</strong>
@@ -140,7 +140,7 @@
             <tr>
                 <th>队员</th>
                 <th>资料</th>
-                <th>近期签到</th>
+                <th>近期活跃</th>
                 <th>Star Level</th>
                 <th>最近点亮时间</th>
             </tr>
@@ -153,14 +153,14 @@
                         <div class="table-subtitle">{{ holder.student_id }}</div>
                     </td>
                     <td>{{ holder.major|default:"未填写专业" }} / {{ holder.class_name|default:"未填写班级" }}</td>
-                    <td>{{ holder.recent_valid_checkins }} 次</td>
+                    <td>{{ holder.recent_activity_count }} 次</td>
                     <td>
                         <span class="table-badge-stack">
                             <span class="badge {{ holder.star_level.tone }}">{{ holder.star_level.label }}</span>
                             <span class="muted">{{ holder.star_level.title }}</span>
                         </span>
                     </td>
-                    <td>{{ holder.last_valid_checkin|date:"Y-m-d H:i" }}</td>
+                    <td>{{ holder.latest_activity_at|date:"Y-m-d H:i" }}</td>
                 </tr>
             {% empty %}
                 <tr>

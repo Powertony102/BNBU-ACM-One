@@ -132,7 +132,7 @@
                 <div class="feed-item">
                     <div>
                         <div class="feed-item-title">{{ holder.real_name }}</div>
-                        <div class="feed-item-meta">{{ holder.major|default:"未填写专业" }} · 近期 {{ holder.recent_valid_checkins }} 次有效签到</div>
+                        <div class="feed-item-meta">{{ holder.major|default:"未填写专业" }} · 近期 {{ holder.recent_activity_count }} 次活跃记录</div>
                     </div>
                     <span class="badge live">点亮中</span>
                 </div>
@@ -140,7 +140,7 @@
                 <div class="feed-item">
                     <div>
                         <div class="feed-item-title">暂无拥有者</div>
-                        <div class="feed-item-meta">当有队员在近期窗口内完成有效签到后，这里会出现重点对象。</div>
+                        <div class="feed-item-meta">当有队员在近期窗口内产生签到或赛事参与后，这里会出现重点对象。</div>
                     </div>
                 </div>
             {% endfor %}

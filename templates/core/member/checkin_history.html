@@ -1,39 +1,41 @@
 {% extends "base.html" %}
 
-{% block title %}签到历史 | One BNBU-ACM{% endblock %}
-{% block topbar_title %}签到历史{% endblock %}
-{% block topbar_subtitle %}<div class="topbar-subtitle">个人出勤记录</div>{% endblock %}
+{% block title %}活跃历史 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}活跃历史{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">个人活动与赛事参与记录</div>{% endblock %}
 
 {% block content %}
 <section class="page-hero">
-    <h2>签到历史</h2>
-    <p>这里记录了你参加过的活动、签到时间与签到方式。</p>
+    <h2>活跃历史</h2>
+    <p>这里统一记录你的活动签到与赛事参与，用于回看个人近期和历史活跃轨迹。</p>
 </section>
 
 <section class="card">
     <table>
         <thead>
             <tr>
-                <th>活动</th>
-                <th>签到时间</th>
-                <th>签到方式</th>
+                <th>记录</th>
+                <th>时间</th>
+                <th>类型</th>
+                <th>说明</th>
                 <th>状态</th>
             </tr>
         </thead>
         <tbody>
-            {% for checkin in checkins %}
+            {% for activity in activity_records %}
                 <tr>
                     <td>
-                        <div class="table-title">{{ checkin.event.title }}</div>
-                        <div class="table-subtitle">{{ checkin.event.location }}</div>
+                        <div class="table-title">{{ activity.title }}</div>
+                        <div class="table-subtitle">{{ activity.detail }}</div>
                     </td>
-                    <td>{{ checkin.checkin_time|date:"Y-m-d H:i" }}</td>
-                    <td>{{ checkin.get_checkin_method_display }}</td>
-                    <td><span class="badge live">{{ checkin.get_status_display }}</span></td>
+                    <td>{{ activity.occurred_at_text }}</td>
+                    <td><span class="badge">{{ activity.source_label }}</span></td>
+                    <td>{{ activity.meta }}</td>
+                    <td><span class="badge {{ activity.status_tone }}">{{ activity.status_label }}</span></td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="4">还没有签到记录。</td>
+                    <td colspan="5">还没有活跃记录。</td>
                 </tr>
             {% endfor %}
         </tbody>

@@ -39,7 +39,7 @@
         <a class="quick-link" href="{% url 'member-star-center' %}">进入 ACM Star</a>
         <a class="quick-link" href="{% url 'member-competition-ladder' %}">查看竞赛天梯</a>
         <a class="quick-link" href="{% url 'member-contest-submission-list' %}">申报赛事奖项</a>
-        <a class="quick-link" href="{% url 'member-checkin-history' %}">查看签到历史</a>
+        <a class="quick-link" href="{% url 'member-checkin-history' %}">查看活跃历史</a>
         <a class="quick-link" href="{% url 'member-profile' %}">维护个人资料</a>
     </div>
 </section>
@@ -60,7 +60,7 @@
                     <span>{{ star_snapshot.level.title }}</span>
                 </div>
                 <p style="margin-top: 14px;">
-                    <strong>{% if star_lit %}近期已参与活动，ACM Star 正在发光。{% else %}近期暂无签到，ACM Star 正等待被点亮。{% endif %}</strong>
+                    <strong>{% if star_lit %}近期已参与活动，ACM Star 正在发光。{% else %}近期暂无活跃记录，ACM Star 正等待被点亮。{% endif %}</strong>
                 </p>
                 <p>{{ star_snapshot.next_milestone }}</p>
                 <div class="progress-track" aria-hidden="true">
@@ -68,15 +68,15 @@
                 </div>
                 <div class="star-inline-stats">
                     <div class="star-inline-stat">
-                        <strong>{{ star_snapshot.recent_checkin_count }}</strong>
-                        <span>近期有效签到</span>
+                        <strong>{{ star_snapshot.recent_activity_count }}</strong>
+                        <span>近期活跃记录</span>
                     </div>
                     <div class="star-inline-stat">
                         <strong>{% if star_snapshot.days_remaining and star_lit %}{{ star_snapshot.days_remaining }} 天{% else %}--{% endif %}</strong>
                         <span>预计维持时长</span>
                     </div>
                     <div class="star-inline-stat">
-                        <strong>{% if star_snapshot.latest_recent_checkin %}{{ star_snapshot.latest_recent_checkin.checkin_time|date:"m-d" }}{% else %}暂无{% endif %}</strong>
+                        <strong>{% if star_snapshot.latest_recent_activity %}{{ star_snapshot.latest_recent_activity.occurred_at_short_text }}{% else %}暂无{% endif %}</strong>
                         <span>最近点亮记录</span>
                     </div>
                 </div>
@@ -153,23 +153,23 @@
 
     <article class="card">
         <div class="card-header">
-            <h3>最新签到</h3>
+            <h3>最新活跃记录</h3>
             <a class="card-meta" href="{% url 'member-checkin-history' %}">查看全部</a>
         </div>
         <div class="feed-list">
-            {% for checkin in recent_checkins %}
+            {% for activity in recent_activities %}
                 <div class="feed-item">
                     <div>
-                        <div class="feed-item-title">{{ checkin.event.title }}</div>
-                        <div class="feed-item-meta">{{ checkin.checkin_time|date:"Y-m-d H:i" }} · {{ checkin.get_checkin_method_display }}</div>
+                        <div class="feed-item-title">{{ activity.title }}</div>
+                        <div class="feed-item-meta">{{ activity.occurred_at_text }} · {{ activity.meta }}</div>
                     </div>
-                    <span class="badge live">完成</span>
+                    <span class="badge live">{{ activity.badge }}</span>
                 </div>
             {% empty %}
                 <div class="feed-item">
                     <div>
                         <div class="feed-item-title">暂无记录</div>
-                        <div class="feed-item-meta">完成签到后，这里会显示你的最新活动记录。</div>
+                        <div class="feed-item-meta">完成签到或新增赛事参与后，这里会显示你的最新活动记录。</div>
                     </div>
                 </div>
             {% endfor %}

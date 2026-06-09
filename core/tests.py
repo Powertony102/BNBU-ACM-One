@@ -109,6 +109,91 @@ class ACMStarViewsTests(TestCase):
         self.assertContains(response, 'Pulse')
         self.assertContains(response, '近期点亮记录')
 
+    def test_verified_contest_result_counts_as_star_activity(self):
+        contest_member_user = User.objects.create_user(
+            username='member-contest-star',
+            password='ACM123456',
+            role=User.Roles.MEMBER,
+        )
+        contest_member_profile = MemberProfile.objects.create(
+            user=contest_member_user,
+            real_name='赛事点亮队员',
+            student_id='20264567',
+            major='Computer Science',
+            status=MemberProfile.Status.ACTIVE,
+        )
+        contest = Contest.objects.create(
+            name='安徽省程序设计竞赛',
+            series=Contest.Series.PROVINCIAL,
+            season='2026',
+            contest_date=timezone.localdate() - timedelta(days=2),
+            level=Contest.Level.PROVINCIAL,
+            status=Contest.Status.PUBLISHED,
+            created_by=self.admin_user,
+        )
+        team = ContestTeam.objects.create(
+            contest=contest,
+            team_name='Star Coders',
+            leader=contest_member_profile,
+        )
+        team.members.add(contest_member_profile)
+        ContestResult.objects.create(
+            contest=contest,
+            team=team,
+            award_type=ContestResult.AwardType.PARTICIPATION,
+            award_label='正式参赛',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+
+        self.client.login(username='member-contest-star', password='ACM123456')
+        response = self.client.get(reverse('member-star-center'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '赛事点亮队员 的 ACM Star')
+        self.assertContains(response, '已点亮')
+        self.assertContains(response, '近期活跃记录')
+        self.assertContains(response, '安徽省程序设计竞赛')
+        self.assertContains(response, '赛事参与')
+
+    def test_member_activity_history_merges_checkins_and_contests(self):
+        contest = Contest.objects.create(
+            name='校赛热身赛',
+            series=Contest.Series.CAMPUS,
+            season='2026',
+            contest_date=timezone.localdate() - timedelta(days=2),
+            level=Contest.Level.CAMPUS,
+            status=Contest.Status.PUBLISHED,
+            created_by=self.admin_user,
+        )
+        team = ContestTeam.objects.create(
+            contest=contest,
+            team_name='History Team',
+            leader=self.member_profile,
+        )
+        team.members.add(self.member_profile)
+        ContestResult.objects.create(
+            contest=contest,
+            team=team,
+            award_type=ContestResult.AwardType.BRONZE,
+            award_label='校赛铜奖',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+
+        self.client.login(username='member-star', password='ACM123456')
+        response = self.client.get(reverse('member-checkin-history'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '活跃历史')
+        self.assertContains(response, 'ACM Star 训练营')
+        self.assertContains(response, '活动签到')
+        self.assertContains(response, '校赛热身赛')
+        self.assertContains(response, '赛事参与')
+        self.assertContains(response, '校赛铜奖')
+
     def test_member_pages_hide_class_name(self):
         self.client.login(username='member-star', password='ACM123456')
 
