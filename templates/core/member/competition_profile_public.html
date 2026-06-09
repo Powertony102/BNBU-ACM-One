@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}公开竞赛档案 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}公开竞赛档案{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">成员间共享的竞赛成长视图</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ profile.real_name }} 的竞赛档案</h2>
+    <p>
+        这里展示该成员的公开竞赛信息，包括等级、Rating、代表奖项和赛事时间线。
+        {% if is_self %}这是你自己的公开视图。{% endif %}
+    </p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong style="color: {{ competition_snapshot.profile.primary_color }};">{{ competition_snapshot.level.label }}</strong>
+            <span>当前等级</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ competition_snapshot.profile.current_rating }}</strong>
+            <span>当前 Rating</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ competition_snapshot.profile.peak_rating }}</strong>
+            <span>历史最高 Rating</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ competition_snapshot.all_results|length }}</strong>
+            <span>已认证赛事数</span>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'member-competition-ladder' %}">返回竞赛天梯</a>
+        {% if is_self %}
+            <a class="quick-link" href="{% url 'member-profile' %}">返回我的资料</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>公开资料摘要</h3>
+            <span class="badge {{ competition_snapshot.level.tone }}">{{ competition_snapshot.level.title }}</span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>姓名：</strong><span class="muted">{{ profile.real_name }}</span></div>
+            <div><strong>专业：</strong><span class="muted">{{ profile.major|default:"未填写专业" }}</span></div>
+            <div><strong>入学年份：</strong><span class="muted">{{ profile.enrollment_year|default:"未填写" }}</span></div>
+            <div><strong>最高奖项：</strong><span class="muted">{{ competition_snapshot.profile.highest_award_label|default:"暂无已认证成绩" }}</span></div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>最近赛事</h3>
+            <span class="pill">{{ competition_snapshot.recent_results|length }} 条</span>
+        </div>
+        <div class="feed-list">
+            {% for result in competition_snapshot.recent_results %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ result.contest.name }} · {{ result.display_award_label }}</div>
+                        <div class="feed-item-meta">{{ result.contest.contest_date|date:"Y-m-d" }} · {{ result.team.team_name }}</div>
+                        <div class="feed-item-meta">{{ result.rank_label|default:"未填写名次描述" }}</div>
+                    </div>
+                    <span class="badge live">+{{ result.rating_delta }}</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无赛事记录</div>
+                        <div class="feed-item-meta">当前还没有公开的已认证赛事成绩。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card" style="grid-column: span 2;">
+        <div class="card-header">
+            <h3>赛事时间线</h3>
+            <span class="pill">{{ competition_snapshot.all_results|length }} 条</span>
+        </div>
+        <div class="feed-list">
+            {% for result in competition_snapshot.all_results %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ result.contest.name }} · {{ result.display_award_label }}</div>
+                        <div class="feed-item-meta">
+                            {{ result.contest.contest_date|date:"Y-m-d" }}
+                            {% if result.contest.stage %} · {{ result.contest.stage }}{% endif %}
+                            · {{ result.contest.get_level_display }}
+                        </div>
+                        <div class="feed-item-meta">队伍：{{ result.team.team_name }} · 成员：{{ result.team.member_names }}</div>
+                        <div class="feed-item-meta">{{ result.rank_label|default:"未填写名次描述" }}</div>
+                    </div>
+                    <span class="badge live">+{{ result.rating_delta }}</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无公开时间线</div>
+                        <div class="feed-item-meta">管理员认证赛事成绩后，这里会逐步形成完整记录。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

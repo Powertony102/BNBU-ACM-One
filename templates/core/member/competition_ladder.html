@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}竞赛天梯 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}竞赛天梯{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">看等级，也看长期积累</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>竞赛天梯</h2>
+    <p>这里展示已经积累赛事成绩的队员梯队。`ACM Star` 代表近期活跃，`ACM Level` 代表长期竞赛积累。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ rated_total }}</strong>
+            <span>已定级队员</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ ladder|length }}</strong>
+            <span>已建档队员</span>
+        </div>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>筛选条件</h3>
+        </div>
+        <form method="get">
+            <p>
+                <label for="id_q">搜索</label>
+                <input id="id_q" type="text" name="q" value="{{ query }}" placeholder="姓名 / 学号 / 专业">
+            </p>
+            <p>
+                <label for="id_major">专业</label>
+                <select id="id_major" name="major">
+                    <option value="">全部专业</option>
+                    {% for major in available_majors %}
+                        <option value="{{ major }}" {% if selected_major == major %}selected{% endif %}>{{ major }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <p>
+                <label for="id_year">入学年份</label>
+                <select id="id_year" name="year">
+                    <option value="">全部年份</option>
+                    {% for year in available_years %}
+                        <option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <p>
+                <label for="id_level">等级</label>
+                <select id="id_level" name="level">
+                    <option value="">全部等级</option>
+                    <option value="unrated" {% if selected_level == "unrated" %}selected{% endif %}>Unrated</option>
+                    <option value="rookie" {% if selected_level == "rookie" %}selected{% endif %}>Rookie</option>
+                    <option value="solver" {% if selected_level == "solver" %}selected{% endif %}>Solver</option>
+                    <option value="specialist" {% if selected_level == "specialist" %}selected{% endif %}>Specialist</option>
+                    <option value="expert" {% if selected_level == "expert" %}selected{% endif %}>Expert</option>
+                    <option value="master" {% if selected_level == "master" %}selected{% endif %}>Master</option>
+                    <option value="legend" {% if selected_level == "legend" %}selected{% endif %}>Legend</option>
+                </select>
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">应用筛选</button>
+                <a class="quick-link" href="{% url 'member-competition-ladder' %}">重置</a>
+            </div>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>排行榜</h3>
+            <span class="pill">{{ ladder|length }} 人</span>
+        </div>
+        <div class="feed-list">
+            {% for entry in ladder %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">
+                            #{{ forloop.counter }}
+                            <a href="{% url 'member-competition-profile-public' entry.member.id %}" style="color: {{ entry.primary_color }}; margin-left: 8px; text-decoration: none;">
+                                {{ entry.member.real_name }}
+                            </a>
+                        </div>
+                        <div class="feed-item-meta">
+                            {{ entry.level_meta.label }} · {{ entry.level_meta.title }} · Rating {{ entry.current_rating }}
+                        </div>
+                        <div class="feed-item-meta">
+                            {{ entry.member.major|default:"未填写专业" }}{% if entry.member.enrollment_year %} · {{ entry.member.enrollment_year }} 级{% endif %}
+                        </div>
+                        <div class="feed-item-meta">
+                            最高奖项：{{ entry.highest_award_label|default:"暂无已认证成绩" }}
+                        </div>
+                    </div>
+                    <span class="badge {{ entry.level_meta.tone }}">{{ entry.level_meta.label }}</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无已建档成员</div>
+                        <div class="feed-item-meta">管理员录入并认证赛事成绩后，这里会自动生成天梯。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

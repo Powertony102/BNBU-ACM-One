@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}赛事奖项申报 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}赛事奖项申报{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">成员自主提交，管理员审核确认</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>我的赛事奖项申报</h2>
+    <p>你可以在这里提交自己的赛事获奖信息。管理员会核对并可修改最终内容，审核通过后才会正式进入竞赛档案和天梯。</p>
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'member-contest-submission-apply' %}">新建申报</a>
+        <a class="quick-link" href="{% url 'member-competition-ladder' %}">返回竞赛天梯</a>
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h3>申报记录</h3>
+        <span class="pill">{{ submissions|length }} 条</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>赛事</th>
+                <th>队伍</th>
+                <th>审核状态</th>
+                <th>审核说明</th>
+                <th>落库结果</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for submission in submissions %}
+                <tr>
+                    <td>
+                        <div class="table-title">{{ submission.contest_name }}</div>
+                        <div class="table-subtitle">{{ submission.contest_date|date:"Y-m-d" }}{% if submission.contest_stage %} · {{ submission.contest_stage }}{% endif %}</div>
+                    </td>
+                    <td>
+                        <div class="table-title">{{ submission.team_name }}</div>
+                        <div class="table-subtitle">
+                            {% for member in submission.team_members.all %}
+                                {{ member.real_name }}{% if not forloop.last %}、{% endif %}
+                            {% endfor %}
+                            {% if submission.external_teammates %} · {{ submission.external_teammates }}{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                            {{ submission.get_review_status_display }}
+                        </span>
+                    </td>
+                    <td>{{ submission.review_note|default:"等待审核结果" }}</td>
+                    <td>
+                        {% if submission.resolved_result %}
+                            <span class="muted">{{ submission.resolved_result.display_award_label }}</span>
+                        {% else %}
+                            <span class="muted">尚未落库</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="5">你还没有提交赛事奖项申报。</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

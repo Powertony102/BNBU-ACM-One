@@ -2,6 +2,7 @@ import secrets
 from datetime import timedelta
 
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
 from django.utils import timezone
@@ -215,6 +216,244 @@ class Event(models.Model):
 
     def get_absolute_url(self):
         return reverse('member-event-detail', args=[self.pk])
+
+
+class Contest(models.Model):
+    class Series(models.TextChoices):
+        ICPC = 'icpc', 'ICPC'
+        CCPC = 'ccpc', 'CCPC'
+        PROVINCIAL = 'provincial', '省赛'
+        INVITATIONAL = 'invitational', '邀请赛'
+        CAMPUS = 'campus', '校赛'
+        SELECTION = 'selection', '选拔赛'
+        OTHER = 'other', '其他'
+
+    class Level(models.TextChoices):
+        NATIONAL = 'national', '国家级'
+        REGIONAL = 'regional', '区域级'
+        PROVINCIAL = 'provincial', '省级'
+        CAMPUS = 'campus', '校级'
+        INTERNAL = 'internal', '队内'
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', '草稿'
+        PUBLISHED = 'published', '已发布'
+        ARCHIVED = 'archived', '已归档'
+
+    name = models.CharField(max_length=200)
+    series = models.CharField(max_length=20, choices=Series.choices, default=Series.OTHER)
+    season = models.CharField(max_length=20, blank=True)
+    stage = models.CharField(max_length=100, blank=True)
+    contest_date = models.DateField()
+    organizer = models.CharField(max_length=200, blank=True)
+    level = models.CharField(max_length=20, choices=Level.choices, default=Level.CAMPUS)
+    weight = models.DecimalField(max_digits=4, decimal_places=2, default=1.00)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    description = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='created_contests')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-contest_date', '-id']
+
+    def __str__(self):
+        if self.stage:
+            return f'{self.name} · {self.stage}'
+        return self.name
+
+
+class ContestTeam(models.Model):
+    contest = models.ForeignKey(Contest, on_delete=models.CASCADE, related_name='teams')
+    team_name = models.CharField(max_length=200)
+    members = models.ManyToManyField(MemberProfile, related_name='contest_teams', blank=True)
+    external_member_names = models.CharField(max_length=255, blank=True)
+    coach_name = models.CharField(max_length=100, blank=True)
+    leader = models.ForeignKey(
+        MemberProfile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='led_contest_teams',
+    )
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['contest__contest_date', 'team_name']
+        constraints = [
+            models.UniqueConstraint(fields=['contest', 'team_name'], name='unique_team_name_per_contest'),
+        ]
+
+    def __str__(self):
+        return f'{self.contest.name} · {self.team_name}'
+
+    @property
+    def member_names(self):
+        members = getattr(self, '_prefetched_objects_cache', {}).get('members')
+        if members is None:
+            members = self.members.all()
+        names = [member.real_name for member in members]
+        if self.external_member_names:
+            names.extend(name.strip() for name in self.external_member_names.split('、') if name.strip())
+        return '、'.join(names) or '未分配成员'
+
+
+class ContestResult(models.Model):
+    class AwardType(models.TextChoices):
+        GOLD = 'gold', '金奖'
+        SILVER = 'silver', '银奖'
+        BRONZE = 'bronze', '铜奖'
+        HONORABLE = 'honorable', '优胜奖'
+        FINALIST = 'finalist', '入围'
+        PARTICIPATION = 'participation', '参赛'
+        CUSTOM = 'custom', '自定义'
+
+    class ResultTier(models.TextChoices):
+        CHAMPION = 'champion', '顶尖'
+        HIGH = 'high', '高'
+        MEDIUM = 'medium', '中'
+        ENTRY = 'entry', '入门'
+
+    contest = models.ForeignKey(Contest, on_delete=models.CASCADE, related_name='results')
+    team = models.ForeignKey(ContestTeam, on_delete=models.CASCADE, related_name='results')
+    award_type = models.CharField(max_length=20, choices=AwardType.choices, default=AwardType.PARTICIPATION)
+    award_label = models.CharField(max_length=100, blank=True)
+    rank_label = models.CharField(max_length=100, blank=True)
+    result_tier = models.CharField(max_length=20, choices=ResultTier.choices, default=ResultTier.ENTRY)
+    manual_bonus = models.IntegerField(default=0)
+    rating_delta = models.IntegerField(default=0)
+    verified = models.BooleanField(default=False)
+    verified_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='verified_contest_results',
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='revoked_contest_results',
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    evidence_url = models.URLField(blank=True)
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-contest__contest_date', '-id']
+        constraints = [
+            models.UniqueConstraint(fields=['contest', 'team'], name='unique_team_result_per_contest'),
+        ]
+
+    def __str__(self):
+        return f'{self.contest.name} · {self.team.team_name}'
+
+    def clean(self):
+        if self.team_id and self.contest_id and self.team.contest_id != self.contest_id:
+            raise ValidationError({'team': '所选队伍必须属于当前赛事。'})
+
+    @property
+    def display_award_label(self):
+        return self.award_label or self.get_award_type_display()
+
+    @property
+    def is_revoked(self):
+        return not self.verified and self.revoked_at is not None
+
+
+class MemberCompetitionProfile(models.Model):
+    member = models.OneToOneField(MemberProfile, on_delete=models.CASCADE, related_name='competition_profile')
+    current_rating = models.IntegerField(default=0)
+    current_level = models.CharField(max_length=30, default='unrated')
+    peak_rating = models.IntegerField(default=0)
+    peak_level = models.CharField(max_length=30, default='unrated')
+    primary_color = models.CharField(max_length=20, default='#7d8b99')
+    highest_award_label = models.CharField(max_length=100, blank=True)
+    latest_contest_result = models.ForeignKey(
+        ContestResult,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='latest_for_members',
+    )
+    last_calculated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-current_rating', 'member__real_name']
+
+    def __str__(self):
+        return f'{self.member.real_name} · {self.current_rating}'
+
+
+class ContestSubmission(models.Model):
+    class ReviewStatus(models.TextChoices):
+        PENDING = 'pending', '待审核'
+        APPROVED = 'approved', '已通过'
+        REJECTED = 'rejected', '已驳回'
+
+    applicant = models.ForeignKey(User, on_delete=models.CASCADE, related_name='contest_submissions')
+    contest_name = models.CharField(max_length=200)
+    contest_series = models.CharField(max_length=20, choices=Contest.Series.choices, default=Contest.Series.OTHER)
+    contest_season = models.CharField(max_length=20, blank=True)
+    contest_stage = models.CharField(max_length=100, blank=True)
+    contest_date = models.DateField()
+    organizer = models.CharField(max_length=200, blank=True)
+    contest_level = models.CharField(max_length=20, choices=Contest.Level.choices, default=Contest.Level.CAMPUS)
+    team_name = models.CharField(max_length=200)
+    team_members = models.ManyToManyField(MemberProfile, related_name='contest_submissions', blank=True)
+    external_teammates = models.CharField(max_length=255, blank=True)
+    award_type = models.CharField(max_length=20, choices=ContestResult.AwardType.choices, default=ContestResult.AwardType.PARTICIPATION)
+    award_label = models.CharField(max_length=100, blank=True)
+    rank_label = models.CharField(max_length=100, blank=True)
+    result_tier = models.CharField(max_length=20, choices=ContestResult.ResultTier.choices, default=ContestResult.ResultTier.ENTRY)
+    evidence_url = models.URLField(blank=True)
+    submission_note = models.TextField(blank=True)
+    review_status = models.CharField(max_length=20, choices=ReviewStatus.choices, default=ReviewStatus.PENDING)
+    review_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reviewed_contest_submissions',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    resolved_contest = models.ForeignKey(
+        Contest,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='submissions',
+    )
+    resolved_team = models.ForeignKey(
+        ContestTeam,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='submissions',
+    )
+    resolved_result = models.ForeignKey(
+        ContestResult,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='submissions',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.applicant.username} · {self.contest_name}'
 
 
 class EventQRCode(models.Model):

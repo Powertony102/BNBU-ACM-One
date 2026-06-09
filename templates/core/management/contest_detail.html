@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}赛事详情 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}赛事详情{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">队伍与成绩管理</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ contest.name }}</h2>
+    <p>{{ contest.contest_date|date:"Y-m-d" }}{% if contest.stage %} · {{ contest.stage }}{% endif %} · {{ contest.get_level_display }} · 权重 {{ contest.weight }}</p>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'contest-edit' contest.id %}">编辑赛事</a>
+        <a class="quick-link" href="{% url 'contest-team-create' contest.id %}">新增队伍</a>
+        <a class="quick-link" href="{% url 'contest-result-create' contest.id %}">录入成绩</a>
+        <a class="quick-link" href="{% url 'contest-list-manage' %}">返回列表</a>
+        {% if contest.status != 'archived' %}
+            <form method="post" action="{% url 'contest-archive' contest.id %}" onsubmit="return confirm('确认将这场赛事归档吗？归档后不会删除历史成绩，但会标记为作废/归档状态。');">
+                {% csrf_token %}
+                <button class="button subtle" type="submit">归档赛事</button>
+            </form>
+        {% else %}
+            <form method="post" action="{% url 'contest-publish' contest.id %}">
+                {% csrf_token %}
+                <button type="submit">恢复发布</button>
+            </form>
+        {% endif %}
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>赛事信息</h3>
+            <span class="badge {% if contest.status == 'published' %}live{% elif contest.status == 'archived' %}dim{% else %}warn{% endif %}">
+                {{ contest.get_status_display }}
+            </span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>赛事系列：</strong><span class="muted">{{ contest.get_series_display }}</span></div>
+            <div><strong>赛季：</strong><span class="muted">{{ contest.season|default:"未填写" }}</span></div>
+            <div><strong>主办方：</strong><span class="muted">{{ contest.organizer|default:"未填写" }}</span></div>
+            <div><strong>说明：</strong><span class="muted">{{ contest.description|default:"暂无说明" }}</span></div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>录入进度</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>{{ teams|length }}</strong><span class="muted"> 支队伍</span></div>
+            <div><strong>{{ results|length }}</strong><span class="muted"> 条成绩</span></div>
+            <div><strong>{{ verified_result_total }}</strong><span class="muted"> 条已生效成绩</span></div>
+            <div><strong>{{ revoked_result_total }}</strong><span class="muted"> 条已撤销成绩</span></div>
+            <div><strong>{{ contest.weight }}</strong><span class="muted"> 当前赛事权重</span></div>
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card">
+        <div class="card-header">
+            <h3>参赛队伍</h3>
+            <a class="card-meta" href="{% url 'contest-team-create' contest.id %}">新增</a>
+        </div>
+        <div class="feed-list">
+            {% for team in teams %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ team.team_name }}</div>
+                        <div class="feed-item-meta">{{ team.member_names }}</div>
+                        <div class="feed-item-meta">
+                            队长：{{ team.leader.real_name|default:"未指定" }} · 指导老师：{{ team.coach_name|default:"未填写" }}
+                        </div>
+                    </div>
+                    <a class="button ghost" href="{% url 'contest-team-edit' team.id %}">编辑</a>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无队伍</div>
+                        <div class="feed-item-meta">先录入参赛队伍，再补录对应成绩。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>成绩记录</h3>
+            <a class="card-meta" href="{% url 'contest-result-create' contest.id %}">录入</a>
+        </div>
+        <div class="feed-list">
+            {% for result in results %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ result.team.team_name }} · {{ result.display_award_label }}</div>
+                        <div class="feed-item-meta">{{ result.team.member_names }}</div>
+                        <div class="feed-item-meta">
+                            {{ result.rank_label|default:"未填写名次描述" }} · 每人 {{ result.rating_delta }} 分
+                        </div>
+                        {% if result.is_revoked %}
+                            <div class="feed-item-meta">已于 {{ result.revoked_at|date:"Y-m-d H:i" }} 撤销生效</div>
+                        {% endif %}
+                    </div>
+                    <div class="stack" style="gap: 8px; align-items: flex-end;">
+                        <span class="badge {% if result.verified %}live{% elif result.is_revoked %}dim{% else %}warn{% endif %}">
+                            {% if result.verified %}已认证{% elif result.is_revoked %}已撤销{% else %}待认证{% endif %}
+                        </span>
+                        <div class="quick-links" style="margin-top: 0;">
+                            <a class="button ghost" href="{% url 'contest-result-edit' result.id %}">编辑</a>
+                            {% if result.verified %}
+                                <form method="post" action="{% url 'contest-result-revoke' result.id %}" onsubmit="return confirm('确认撤销这条成绩的生效吗？相关成员的 Rating 会同步重算。');">
+                                    {% csrf_token %}
+                                    <button class="button subtle" type="submit">撤销</button>
+                                </form>
+                            {% elif result.is_revoked %}
+                                <form method="post" action="{% url 'contest-result-restore' result.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit">恢复生效</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无成绩</div>
+                        <div class="feed-item-meta">队伍信息齐全后就可以录入获奖情况。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

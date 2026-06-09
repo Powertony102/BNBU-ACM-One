@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}赛事管理 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}赛事管理{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">维护赛事、队伍与获奖记录</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>赛事管理</h2>
+    <p>这里维护正式赛事、参赛队伍与认证后的成绩记录，为 ACM Rating 和 ACM Level 提供数据来源。</p>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'contest-create' %}">创建赛事</a>
+        <a class="quick-link" href="{% url 'contest-submission-list-manage' %}">审核奖项申报</a>
+        <a class="quick-link" href="{% url 'management-dashboard' %}">返回管理首页</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>筛选条件</h3>
+        </div>
+        <form method="get">
+            <p>
+                <label for="id_q">搜索</label>
+                <input id="id_q" type="text" name="q" value="{{ query }}" placeholder="赛事名 / 阶段 / 主办方 / 学年">
+            </p>
+            <p>
+                <label for="id_series">赛事系列</label>
+                <select id="id_series" name="series">
+                    <option value="">全部系列</option>
+                    {% for value, label in series_choices %}
+                        <option value="{{ value }}" {% if selected_series == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <p>
+                <label for="id_level">赛事级别</label>
+                <select id="id_level" name="level">
+                    <option value="">全部级别</option>
+                    {% for value, label in level_choices %}
+                        <option value="{{ value }}" {% if selected_level == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <p>
+                <label for="id_status">状态</label>
+                <select id="id_status" name="status">
+                    <option value="">全部状态</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <p>
+                <label for="id_season">学年/赛季</label>
+                <select id="id_season" name="season">
+                    <option value="">全部学年</option>
+                    {% for season in available_seasons %}
+                        <option value="{{ season }}" {% if selected_season == season %}selected{% endif %}>{{ season }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">应用筛选</button>
+                <a class="quick-link" href="{% url 'contest-list-manage' %}">重置</a>
+            </div>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>赛事列表</h3>
+            <span class="pill">{{ contests|length }} 场</span>
+        </div>
+        <div class="event-list">
+            {% for contest in contests %}
+                <a class="event-item" href="{% url 'contest-detail-manage' contest.id %}">
+                    <div>
+                        <div class="event-item-title">{{ contest.name }}</div>
+                        <div class="event-item-meta">
+                            {{ contest.contest_date|date:"Y-m-d" }}
+                            {% if contest.stage %} · {{ contest.stage }}{% endif %}
+                            · {{ contest.get_level_display }}
+                        </div>
+                        <div class="event-item-meta">
+                            {{ contest.team_total }} 支队伍 · {{ contest.verified_result_total }} 条已认证成绩
+                        </div>
+                    </div>
+                    <span class="badge {% if contest.status == 'published' %}live{% elif contest.status == 'archived' %}dim{% else %}warn{% endif %}">
+                        {{ contest.get_status_display }}
+                    </span>
+                </a>
+            {% empty %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">暂无赛事</div>
+                        <div class="event-item-meta">创建第一场赛事后，队伍和成绩就可以继续录入。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

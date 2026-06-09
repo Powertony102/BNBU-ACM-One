@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | One BNBU-ACM{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">维护赛事参赛队伍</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ page_title }}</h2>
+    <p>当前赛事：{{ contest.name }}。录入队伍成员后，后续成绩会自动关联到对应成员的竞赛档案。</p>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">保存队伍</button>
+                <a class="quick-link" href="{% url 'contest-detail-manage' contest.id %}">返回赛事</a>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

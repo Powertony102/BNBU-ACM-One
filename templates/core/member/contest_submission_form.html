@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | One BNBU-ACM{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">先由成员填写，最终以管理员审核为准</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ page_title }}</h2>
+    <p>请尽量完整填写赛事、队伍和获奖信息。管理员审核时可以修改内容，并决定是否纳入正式竞赛档案。</p>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">提交申报</button>
+                <a class="quick-link" href="{% url 'member-contest-submission-list' %}">返回列表</a>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

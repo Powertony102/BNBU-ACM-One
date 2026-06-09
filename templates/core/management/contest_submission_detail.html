@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}奖项申报详情 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}奖项申报详情{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">{{ submission.contest_name }}</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ submission.contest_name }}</h2>
+    <p>申请人：{{ submission.applicant.member_profile.real_name|default:submission.applicant.username }}。管理员可以直接修改成员提交的信息，并决定最终是否落入正式赛事档案。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ submission.get_review_status_display }}</strong>
+            <span>当前审核状态</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ submission.created_at|date:"Y-m-d" }}</strong>
+            <span>提交时间</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{% if submission.resolved_result %}已落库{% else %}未落库{% endif %}</strong>
+            <span>正式记录</span>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'contest-submission-list-manage' %}">返回申报列表</a>
+        {% if submission.resolved_contest %}
+            <a class="quick-link" href="{% url 'contest-detail-manage' submission.resolved_contest.id %}">查看正式赛事</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>审核编辑</h3>
+            <span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                {{ submission.get_review_status_display }}
+            </span>
+        </div>
+        <form method="post" action="{% url 'contest-submission-review' submission.id %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit" name="decision" value="approve">审核通过并落库</button>
+                <button class="button subtle" type="submit" name="decision" value="reject">驳回申报</button>
+            </div>
+        </form>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>审核信息</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>申请人：</strong><span class="muted">{{ submission.applicant.member_profile.real_name|default:submission.applicant.username }}</span></div>
+            <div><strong>审核人：</strong><span class="muted">{% if submission.reviewed_by %}{{ submission.reviewed_by.admin_profile.display_name|default:submission.reviewed_by.username }}{% else %}暂未审核{% endif %}</span></div>
+            <div><strong>审核说明：</strong><span class="muted">{{ submission.review_note|default:"暂无" }}</span></div>
+            <div><strong>正式赛事：</strong><span class="muted">{% if submission.resolved_contest %}{{ submission.resolved_contest.name }}{% else %}尚未生成{% endif %}</span></div>
+            <div><strong>正式成绩：</strong><span class="muted">{% if submission.resolved_result %}{{ submission.resolved_result.display_award_label }}{% else %}尚未生成{% endif %}</span></div>
+        </div>
+    </article>
+</section>
+{% endblock %}

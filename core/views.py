@@ -13,6 +13,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
 from django.core import signing
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -20,9 +21,21 @@ from django.urls import reverse
 from django.utils import timezone
 import qrcode
 
+from .competition import (
+    build_competition_ladder_queryset,
+    build_member_competition_snapshot,
+    get_competition_level,
+    sync_member_competition_profile,
+    sync_members_competition_profiles,
+)
 from .forms import (
     AdminCreateForm,
     AdminUpdateForm,
+    ContestForm,
+    ContestResultForm,
+    ContestSubmissionForm,
+    ContestSubmissionReviewForm,
+    ContestTeamForm,
     EventApplicationForm,
     EventForm,
     EventReviewForm,
@@ -35,7 +48,21 @@ from .forms import (
     PasswordResetRequestForm,
     SystemSettingsForm,
 )
-from .models import AdminProfile, AuditLog, CheckInRecord, Event, EventQRCode, MemberProfile, SystemSetting, User
+from .models import (
+    AdminProfile,
+    AuditLog,
+    CheckInRecord,
+    Contest,
+    ContestResult,
+    ContestSubmission,
+    ContestTeam,
+    Event,
+    EventQRCode,
+    MemberCompetitionProfile,
+    MemberProfile,
+    SystemSetting,
+    User,
+)
 from .services import (
     invalidate_password_change_codes,
     invalidate_password_reset_codes,
@@ -396,6 +423,10 @@ def can_review_event_application(user, event):
     return require_management(user) and event.is_member_application()
 
 
+def can_review_contest_submission(user, submission):
+    return require_management(user)
+
+
 def can_edit_event(user):
     return require_management(user)
 
@@ -412,6 +443,124 @@ def build_checkin_manager_choices(queryset):
         }
         for user in queryset
     ]
+
+
+def apply_contest_result_verification(result, verified, operator):
+    result.verified = verified
+    if verified:
+        result.verified_by = operator
+        result.verified_at = timezone.now()
+        result.revoked_by = None
+        result.revoked_at = None
+    else:
+        result.verified_by = None
+        result.verified_at = None
+
+
+def sync_competition_profiles_for_member_ids(member_ids):
+    members = MemberProfile.objects.filter(id__in=set(member_ids))
+    sync_members_competition_profiles(members)
+
+
+def revoke_contest_result(result, operator):
+    result.verified = False
+    result.verified_by = None
+    result.verified_at = None
+    result.revoked_by = operator
+    result.revoked_at = timezone.now()
+    result.save(update_fields=['verified', 'verified_by', 'verified_at', 'revoked_by', 'revoked_at'])
+
+
+def get_submission_member_ids(submission):
+    return list(submission.team_members.values_list('id', flat=True))
+
+
+def ensure_submission_result_is_not_conflicting(submission, contest, team):
+    existing_result = (
+        ContestResult.objects.filter(contest=contest, team=team)
+        .exclude(pk=submission.resolved_result_id)
+        .first()
+    )
+    if existing_result is not None:
+        raise ValidationError('该赛事队伍已经存在正式成绩，请直接编辑原成绩，不能通过申报覆盖。')
+
+
+@transaction.atomic
+def approve_contest_submission(submission, cleaned_data, operator):
+    linked_contest = cleaned_data.get('linked_contest')
+    team_members = cleaned_data.get('team_members')
+    if submission.applicant.member_profile not in team_members:
+        team_members = list(team_members) + [submission.applicant.member_profile]
+
+    if linked_contest:
+        contest = linked_contest
+    else:
+        contest = submission.resolved_contest
+        if contest is None:
+            contest = Contest(created_by=operator)
+        contest.name = cleaned_data['contest_name']
+        contest.series = cleaned_data['contest_series']
+        contest.season = cleaned_data['contest_season']
+        contest.stage = cleaned_data['contest_stage']
+        contest.contest_date = cleaned_data['contest_date']
+        contest.organizer = cleaned_data['organizer']
+        contest.level = cleaned_data['contest_level']
+        contest.weight = contest.weight or 1.00
+        contest.status = Contest.Status.PUBLISHED
+        contest.description = submission.submission_note or contest.description
+        if not contest.created_by_id:
+            contest.created_by = operator
+        contest.save()
+
+    team = submission.resolved_team
+    if team is None or team.contest_id != contest.id:
+        team = ContestTeam.objects.filter(contest=contest, team_name=cleaned_data['team_name']).first() or ContestTeam(contest=contest)
+    team.contest = contest
+    team.team_name = cleaned_data['team_name']
+    team.external_member_names = cleaned_data['external_teammates']
+    if submission.submission_note:
+        team.note = submission.submission_note
+    team.save()
+    team.members.set(team_members)
+    team.leader = submission.applicant.member_profile if submission.applicant.member_profile in team_members else team.members.first()
+    team.save(update_fields=['leader', 'updated_at'])
+
+    ensure_submission_result_is_not_conflicting(submission, contest, team)
+    result = submission.resolved_result
+    if result is None or result.contest_id != contest.id or result.team_id != team.id:
+        result = ContestResult(contest=contest, team=team)
+    result.contest = contest
+    result.team = team
+    result.award_type = cleaned_data['award_type']
+    result.award_label = cleaned_data['award_label'] or dict(ContestResult.AwardType.choices).get(cleaned_data['award_type'], '')
+    result.rank_label = cleaned_data['rank_label']
+    result.result_tier = cleaned_data['result_tier']
+    result.evidence_url = cleaned_data['evidence_url']
+    result.note = cleaned_data['submission_note']
+    apply_contest_result_verification(result, True, operator)
+    result.save()
+
+    submission.review_status = ContestSubmission.ReviewStatus.APPROVED
+    submission.review_note = cleaned_data.get('review_note', '')
+    submission.reviewed_by = operator
+    submission.reviewed_at = timezone.now()
+    submission.resolved_contest = contest
+    submission.resolved_team = team
+    submission.resolved_result = result
+    submission.save(
+        update_fields=[
+            'review_status',
+            'review_note',
+            'reviewed_by',
+            'reviewed_at',
+            'resolved_contest',
+            'resolved_team',
+            'resolved_result',
+            'updated_at',
+        ]
+    )
+    sync_competition_profiles_for_member_ids(team.members.values_list('id', flat=True))
+    return contest, team, result
 
 
 def login_view(request):
@@ -602,6 +751,7 @@ def member_dashboard(request):
     profile = get_object_or_404(MemberProfile, user=request.user)
     window_days, window_start = get_star_window()
     star_snapshot = build_member_star_snapshot(profile, window_days=window_days, window_start=window_start)
+    competition_snapshot = build_member_competition_snapshot(profile)
     recent_events = (
         Event.objects.filter(review_status=Event.ReviewStatus.APPROVED, status=Event.Status.PUBLISHED)
         .order_by('start_time')[:5]
@@ -618,6 +768,8 @@ def member_dashboard(request):
             applicant=request.user,
             review_status=Event.ReviewStatus.APPROVED,
         ).count(),
+        'competition_snapshot': competition_snapshot,
+        'contest_submission_total': ContestSubmission.objects.filter(applicant=request.user).count(),
     }
     return render(request, 'core/member/dashboard.html', context)
 
@@ -745,7 +897,78 @@ def member_profile(request):
         log_action(request.user, 'update_member_profile', 'MemberProfile', profile.id)
         messages.success(request, '个人资料已更新。')
         return redirect('member-profile')
-    return render(request, 'core/member/profile.html', {'form': form, 'profile': profile})
+    return render(
+        request,
+        'core/member/profile.html',
+        {
+            'form': form,
+            'profile': profile,
+            'competition_snapshot': build_member_competition_snapshot(profile),
+        },
+    )
+
+
+@login_required
+def member_competition_profile_public(request, member_id):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    profile = get_object_or_404(MemberProfile, pk=member_id, status=MemberProfile.Status.ACTIVE)
+    return render(
+        request,
+        'core/member/competition_profile_public.html',
+        {
+            'profile': profile,
+            'competition_snapshot': build_member_competition_snapshot(profile),
+            'is_self': profile.user_id == request.user.id,
+        },
+    )
+
+
+@login_required
+def member_contest_submission_list(request):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    submissions = (
+        ContestSubmission.objects.filter(applicant=request.user)
+        .select_related('reviewed_by', 'resolved_contest', 'resolved_result')
+        .prefetch_related('team_members')
+        .order_by('-created_at')
+    )
+    return render(
+        request,
+        'core/member/contest_submission_list.html',
+        {
+            'submissions': submissions,
+        },
+    )
+
+
+@login_required
+def member_contest_submission_apply(request):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    profile = get_object_or_404(MemberProfile, user=request.user)
+    form = ContestSubmissionForm(applicant_profile=profile, data=request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        submission = form.save(commit=False)
+        submission.applicant = request.user
+        submission.review_status = ContestSubmission.ReviewStatus.PENDING
+        submission.save()
+        selected_members = list(form.cleaned_data['team_members'])
+        if profile not in selected_members:
+            selected_members.append(profile)
+        submission.team_members.set(selected_members)
+        log_action(request.user, 'submit_contest_submission', 'ContestSubmission', submission.id)
+        messages.success(request, '赛事奖项申报已提交，等待管理员审核。')
+        return redirect('member-contest-submission-list')
+    return render(
+        request,
+        'core/member/contest_submission_form.html',
+        {
+            'form': form,
+            'page_title': '申报赛事奖项',
+        },
+    )
 
 
 @login_required
@@ -767,6 +990,64 @@ def member_star_center(request):
 
 
 @login_required
+def member_competition_ladder(request):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    ladder_queryset = build_competition_ladder_queryset()
+    selected_major = request.GET.get('major', '').strip()
+    selected_year = request.GET.get('year', '').strip()
+    selected_level = request.GET.get('level', '').strip()
+    query = request.GET.get('q', '').strip()
+
+    if selected_major:
+        ladder_queryset = ladder_queryset.filter(member__major=selected_major)
+    if selected_year:
+        ladder_queryset = ladder_queryset.filter(member__enrollment_year=selected_year)
+    if selected_level:
+        ladder_queryset = ladder_queryset.filter(current_level=selected_level)
+    if query:
+        ladder_queryset = ladder_queryset.filter(
+            Q(member__real_name__icontains=query)
+            | Q(member__student_id__icontains=query)
+            | Q(member__major__icontains=query)
+        )
+
+    ladder = list(ladder_queryset)
+    for entry in ladder:
+        entry.level_meta = get_competition_level(entry.current_rating)
+    available_majors = [
+        value
+        for value in MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
+        .exclude(major='')
+        .order_by('major')
+        .values_list('major', flat=True)
+        .distinct()
+    ]
+    available_years = [
+        value
+        for value in MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
+        .exclude(enrollment_year__isnull=True)
+        .order_by('enrollment_year')
+        .values_list('enrollment_year', flat=True)
+        .distinct()
+    ]
+    return render(
+        request,
+        'core/member/competition_ladder.html',
+        {
+            'ladder': ladder,
+            'rated_total': sum(1 for entry in ladder if entry.current_rating > 0),
+            'selected_major': selected_major,
+            'selected_year': selected_year,
+            'selected_level': selected_level,
+            'query': query,
+            'available_majors': available_majors,
+            'available_years': available_years,
+        },
+    )
+
+
+@login_required
 def management_dashboard(request):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
@@ -776,8 +1057,15 @@ def management_dashboard(request):
     active_members = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE).count()
     star_holders = get_star_holders_queryset(window_start)
     lit_members = star_holders.count()
+    top_competition_members = list(build_competition_ladder_queryset()[:3])
+    for entry in top_competition_members:
+        entry.level_meta = get_competition_level(entry.current_rating)
     context = {
         'recent_event_count': Event.objects.filter(start_time__gte=now).count(),
+        'contest_total': Contest.objects.count(),
+        'pending_contest_submission_count': ContestSubmission.objects.filter(review_status=ContestSubmission.ReviewStatus.PENDING).count(),
+        'verified_result_total': ContestResult.objects.filter(verified=True).count(),
+        'rated_member_total': MemberCompetitionProfile.objects.filter(current_rating__gt=0).count(),
         'pending_application_count': Event.objects.filter(review_status=Event.ReviewStatus.PENDING).count(),
         'today_checkin_count': CheckInRecord.objects.filter(
             status=CheckInRecord.Status.VALID,
@@ -787,6 +1075,7 @@ def management_dashboard(request):
         'active_members': active_members,
         'star_ratio': round((lit_members / active_members) * 100) if active_members else 0,
         'top_star_holders': star_holders[:3],
+        'top_competition_members': top_competition_members,
         'window_days': window_days,
     }
     return render(request, 'core/management/dashboard.html', context)
@@ -835,6 +1124,449 @@ def star_analytics(request):
         'class_breakdown': class_breakdown,
     }
     return render(request, 'core/management/star_analytics.html', context)
+
+
+@login_required
+def contest_list_manage(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    contests = (
+        Contest.objects.annotate(
+            team_total=Count('teams', distinct=True),
+            verified_result_total=Count('results', filter=Q(results__verified=True), distinct=True),
+        )
+    )
+    query = request.GET.get('q', '').strip()
+    selected_series = request.GET.get('series', '').strip()
+    selected_level = request.GET.get('level', '').strip()
+    selected_status = request.GET.get('status', '').strip()
+    selected_season = request.GET.get('season', '').strip()
+
+    if query:
+        contests = contests.filter(
+            Q(name__icontains=query)
+            | Q(stage__icontains=query)
+            | Q(organizer__icontains=query)
+            | Q(season__icontains=query)
+        )
+    if selected_series:
+        contests = contests.filter(series=selected_series)
+    if selected_level:
+        contests = contests.filter(level=selected_level)
+    if selected_status:
+        contests = contests.filter(status=selected_status)
+    if selected_season:
+        contests = contests.filter(season=selected_season)
+
+    contests = contests.order_by('-contest_date', '-id')
+    available_seasons = [
+        value
+        for value in Contest.objects.exclude(season='').order_by('-season').values_list('season', flat=True).distinct()
+    ]
+    return render(
+        request,
+        'core/management/contest_list.html',
+        {
+            'contests': contests,
+            'query': query,
+            'selected_series': selected_series,
+            'selected_level': selected_level,
+            'selected_status': selected_status,
+            'selected_season': selected_season,
+            'available_seasons': available_seasons,
+            'series_choices': Contest.Series.choices,
+            'level_choices': Contest.Level.choices,
+            'status_choices': Contest.Status.choices,
+        },
+    )
+
+
+@login_required
+def contest_submission_list_manage(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    selected_status = request.GET.get('status', '').strip()
+    query = request.GET.get('q', '').strip()
+    submissions = ContestSubmission.objects.select_related('applicant', 'reviewed_by', 'resolved_contest').prefetch_related('team_members')
+    if selected_status:
+        submissions = submissions.filter(review_status=selected_status)
+    if query:
+        submissions = submissions.filter(
+            Q(contest_name__icontains=query)
+            | Q(team_name__icontains=query)
+            | Q(applicant__username__icontains=query)
+            | Q(applicant__member_profile__real_name__icontains=query)
+        )
+    submissions = submissions.order_by('-created_at')
+    return render(
+        request,
+        'core/management/contest_submission_list.html',
+        {
+            'submissions': submissions,
+            'selected_status': selected_status,
+            'query': query,
+            'status_choices': ContestSubmission.ReviewStatus.choices,
+            'pending_total': ContestSubmission.objects.filter(review_status=ContestSubmission.ReviewStatus.PENDING).count(),
+        },
+    )
+
+
+@login_required
+def contest_submission_detail_manage(request, submission_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    submission = get_object_or_404(
+        ContestSubmission.objects.select_related(
+            'applicant',
+            'applicant__member_profile',
+            'reviewed_by',
+            'resolved_contest',
+            'resolved_team',
+            'resolved_result',
+        ).prefetch_related('team_members'),
+        pk=submission_id,
+    )
+    applicant_profile = getattr(submission.applicant, 'member_profile', None)
+    form = ContestSubmissionReviewForm(applicant_profile=applicant_profile, data=request.POST or None, instance=submission)
+    return render(
+        request,
+        'core/management/contest_submission_detail.html',
+        {
+            'submission': submission,
+            'form': form,
+        },
+    )
+
+
+@login_required
+@transaction.atomic
+def contest_submission_review(request, submission_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    if request.method != 'POST':
+        return HttpResponseForbidden('仅支持 POST。')
+    submission = get_object_or_404(
+        ContestSubmission.objects.select_related(
+            'applicant',
+            'applicant__member_profile',
+            'resolved_result',
+            'resolved_result__team',
+        ),
+        pk=submission_id,
+    )
+    if not can_review_contest_submission(request.user, submission):
+        return HttpResponseForbidden('仅管理员可审核赛事奖项申报。')
+    applicant_profile = getattr(submission.applicant, 'member_profile', None)
+    form = ContestSubmissionReviewForm(applicant_profile=applicant_profile, data=request.POST or None, instance=submission)
+    if not form.is_valid():
+        messages.error(request, '审核表单提交失败，请检查后重试。')
+        return render(
+            request,
+            'core/management/contest_submission_detail.html',
+            {
+                'submission': submission,
+                'form': form,
+            },
+        )
+    decision = request.POST.get('decision')
+    previous_review_status = submission.review_status
+    submission = form.save(commit=False)
+    submission.review_note = form.cleaned_data.get('review_note', '')
+    submission.save()
+    form.save_m2m()
+    if decision == 'approve':
+        try:
+            contest, team, result = approve_contest_submission(submission, form.cleaned_data, request.user)
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            messages.error(request, '审核未通过，请先处理正式赛事成绩冲突。')
+            return render(
+                request,
+                'core/management/contest_submission_detail.html',
+                {
+                    'submission': submission,
+                    'form': form,
+                },
+            )
+        log_action(request.user, 'approve_contest_submission', 'ContestSubmission', submission.id, f'contest_id={contest.id},result_id={result.id}')
+        messages.success(request, '赛事奖项申报已通过，正式赛事记录已更新。')
+    elif decision == 'reject':
+        if previous_review_status == ContestSubmission.ReviewStatus.APPROVED and submission.resolved_result_id:
+            result = submission.resolved_result
+            if result.verified:
+                revoke_contest_result(result, request.user)
+                sync_competition_profiles_for_member_ids(result.team.members.values_list('id', flat=True))
+        submission.review_status = ContestSubmission.ReviewStatus.REJECTED
+        submission.reviewed_by = request.user
+        submission.reviewed_at = timezone.now()
+        submission.save(update_fields=['review_status', 'review_note', 'reviewed_by', 'reviewed_at', 'updated_at'])
+        log_action(request.user, 'reject_contest_submission', 'ContestSubmission', submission.id)
+        messages.success(request, '赛事奖项申报已驳回。')
+    else:
+        messages.error(request, '无效的审核操作。')
+    return redirect('contest-submission-detail-manage', submission_id=submission.id)
+
+
+@login_required
+def contest_create(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    form = ContestForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        contest = form.save(commit=False)
+        contest.created_by = request.user
+        contest.save()
+        log_action(request.user, 'create_contest', 'Contest', contest.id)
+        messages.success(request, '赛事已创建。')
+        return redirect('contest-detail-manage', contest_id=contest.id)
+    return render(
+        request,
+        'core/management/contest_form.html',
+        {
+            'form': form,
+            'page_title': '创建赛事',
+        },
+    )
+
+
+@login_required
+def contest_edit(request, contest_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    contest = get_object_or_404(Contest, pk=contest_id)
+    form = ContestForm(request.POST or None, instance=contest)
+    if request.method == 'POST' and form.is_valid():
+        contest = form.save()
+        if contest.results.filter(verified=True).exists():
+            member_ids = list(
+                MemberProfile.objects.filter(contest_teams__contest=contest)
+                .values_list('id', flat=True)
+                .distinct()
+            )
+            sync_competition_profiles_for_member_ids(member_ids)
+        log_action(request.user, 'edit_contest', 'Contest', contest.id)
+        messages.success(request, '赛事已更新。')
+        return redirect('contest-detail-manage', contest_id=contest.id)
+    return render(
+        request,
+        'core/management/contest_form.html',
+        {
+            'form': form,
+            'page_title': '编辑赛事',
+            'contest': contest,
+        },
+    )
+
+
+@login_required
+def contest_detail_manage(request, contest_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    contest = get_object_or_404(Contest, pk=contest_id)
+    teams = contest.teams.prefetch_related('members').order_by('team_name')
+    results = (
+        contest.results.select_related('team', 'verified_by')
+        .prefetch_related('team__members')
+        .order_by('-verified', 'team__team_name')
+    )
+    return render(
+        request,
+        'core/management/contest_detail.html',
+        {
+            'contest': contest,
+            'teams': teams,
+            'results': results,
+            'verified_result_total': sum(1 for result in results if result.verified),
+            'revoked_result_total': sum(1 for result in results if result.is_revoked),
+        },
+    )
+
+
+@login_required
+def contest_team_create(request, contest_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    contest = get_object_or_404(Contest, pk=contest_id)
+    form = ContestTeamForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        team = form.save(commit=False)
+        team.contest = contest
+        team.save()
+        form.save_m2m()
+        log_action(request.user, 'create_contest_team', 'ContestTeam', team.id, f'contest_id={contest.id}')
+        messages.success(request, '参赛队伍已创建。')
+        return redirect('contest-detail-manage', contest_id=contest.id)
+    return render(
+        request,
+        'core/management/contest_team_form.html',
+        {
+            'form': form,
+            'contest': contest,
+            'page_title': '新增参赛队伍',
+        },
+    )
+
+
+@login_required
+def contest_team_edit(request, team_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    team = get_object_or_404(ContestTeam.objects.prefetch_related('members'), pk=team_id)
+    previous_member_ids = list(team.members.values_list('id', flat=True))
+    form = ContestTeamForm(request.POST or None, instance=team)
+    if request.method == 'POST' and form.is_valid():
+        team = form.save()
+        if team.results.filter(verified=True).exists():
+            current_member_ids = list(team.members.values_list('id', flat=True))
+            sync_competition_profiles_for_member_ids(previous_member_ids + current_member_ids)
+        log_action(request.user, 'edit_contest_team', 'ContestTeam', team.id)
+        messages.success(request, '参赛队伍已更新。')
+        return redirect('contest-detail-manage', contest_id=team.contest_id)
+    return render(
+        request,
+        'core/management/contest_team_form.html',
+        {
+            'form': form,
+            'contest': team.contest,
+            'team': team,
+            'page_title': '编辑参赛队伍',
+        },
+    )
+
+
+@login_required
+def contest_result_create(request, contest_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    contest = get_object_or_404(Contest, pk=contest_id)
+    form = ContestResultForm(contest, request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        result = form.save(commit=False)
+        result.contest = contest
+        apply_contest_result_verification(result, form.cleaned_data['verified'], request.user)
+        if not result.award_label:
+            result.award_label = result.get_award_type_display()
+        result.save()
+        member_ids = list(result.team.members.values_list('id', flat=True))
+        sync_competition_profiles_for_member_ids(member_ids)
+        log_action(request.user, 'create_contest_result', 'ContestResult', result.id, f'contest_id={contest.id}')
+        messages.success(request, '赛事成绩已保存。')
+        return redirect('contest-detail-manage', contest_id=contest.id)
+    return render(
+        request,
+        'core/management/contest_result_form.html',
+        {
+            'form': form,
+            'contest': contest,
+            'page_title': '录入赛事成绩',
+        },
+    )
+
+
+@login_required
+def contest_result_edit(request, result_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    result = get_object_or_404(ContestResult.objects.select_related('contest', 'team'), pk=result_id)
+    previous_member_ids = list(result.team.members.values_list('id', flat=True))
+    previous_team_id = result.team_id
+    form = ContestResultForm(result.contest, request.POST or None, instance=result)
+    if request.method == 'POST' and form.is_valid():
+        result = form.save(commit=False)
+        apply_contest_result_verification(result, form.cleaned_data['verified'], request.user)
+        if not result.award_label:
+            result.award_label = result.get_award_type_display()
+        result.save()
+        member_ids = previous_member_ids
+        if result.team_id != previous_team_id:
+            member_ids += list(result.team.members.values_list('id', flat=True))
+        else:
+            member_ids += list(result.team.members.values_list('id', flat=True))
+        sync_competition_profiles_for_member_ids(member_ids)
+        log_action(request.user, 'edit_contest_result', 'ContestResult', result.id)
+        messages.success(request, '赛事成绩已更新。')
+        return redirect('contest-detail-manage', contest_id=result.contest_id)
+    return render(
+        request,
+        'core/management/contest_result_form.html',
+        {
+            'form': form,
+            'contest': result.contest,
+            'result': result,
+            'page_title': '编辑赛事成绩',
+        },
+    )
+
+
+@login_required
+def contest_archive(request, contest_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    if request.method != 'POST':
+        return HttpResponseForbidden('仅支持 POST。')
+    contest = get_object_or_404(Contest, pk=contest_id)
+    contest.status = Contest.Status.ARCHIVED
+    contest.save(update_fields=['status', 'updated_at'])
+    member_ids = list(
+        MemberProfile.objects.filter(contest_teams__contest=contest)
+        .values_list('id', flat=True)
+        .distinct()
+    )
+    sync_competition_profiles_for_member_ids(member_ids)
+    log_action(request.user, 'archive_contest', 'Contest', contest.id)
+    messages.success(request, '赛事已归档。')
+    return redirect('contest-detail-manage', contest_id=contest.id)
+
+
+@login_required
+def contest_publish(request, contest_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    if request.method != 'POST':
+        return HttpResponseForbidden('仅支持 POST。')
+    contest = get_object_or_404(Contest, pk=contest_id)
+    contest.status = Contest.Status.PUBLISHED
+    contest.save(update_fields=['status', 'updated_at'])
+    member_ids = list(
+        MemberProfile.objects.filter(contest_teams__contest=contest)
+        .values_list('id', flat=True)
+        .distinct()
+    )
+    sync_competition_profiles_for_member_ids(member_ids)
+    log_action(request.user, 'publish_contest', 'Contest', contest.id)
+    messages.success(request, '赛事已恢复为已发布。')
+    return redirect('contest-detail-manage', contest_id=contest.id)
+
+
+@login_required
+def contest_result_revoke(request, result_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    if request.method != 'POST':
+        return HttpResponseForbidden('仅支持 POST。')
+    result = get_object_or_404(ContestResult.objects.select_related('contest', 'team'), pk=result_id)
+    revoke_contest_result(result, request.user)
+    sync_competition_profiles_for_member_ids(result.team.members.values_list('id', flat=True))
+    log_action(request.user, 'revoke_contest_result', 'ContestResult', result.id)
+    messages.success(request, '赛事成绩已撤销生效。')
+    return redirect('contest-detail-manage', contest_id=result.contest_id)
+
+
+@login_required
+def contest_result_restore(request, result_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    if request.method != 'POST':
+        return HttpResponseForbidden('仅支持 POST。')
+    result = get_object_or_404(ContestResult.objects.select_related('contest', 'team'), pk=result_id)
+    apply_contest_result_verification(result, True, request.user)
+    if not result.award_label:
+        result.award_label = result.get_award_type_display()
+    result.save()
+    sync_competition_profiles_for_member_ids(result.team.members.values_list('id', flat=True))
+    log_action(request.user, 'restore_contest_result', 'ContestResult', result.id)
+    messages.success(request, '赛事成绩已恢复生效。')
+    return redirect('contest-detail-manage', contest_id=result.contest_id)
 
 
 @login_required

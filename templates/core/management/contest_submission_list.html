@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}奖项申报审核 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}奖项申报审核{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">成员提交，管理员确认并落正式赛事数据</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>赛事奖项申报审核</h2>
+    <p>这里集中处理成员提交的赛事奖项申报。审核通过后会正式写入赛事、队伍和成绩记录。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ pending_total }}</strong>
+            <span>待审核</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ submissions|length }}</strong>
+            <span>当前列表结果</span>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'contest-list-manage' %}">返回赛事管理</a>
+        <a class="quick-link" href="{% url 'management-dashboard' %}">返回管理首页</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>筛选条件</h3>
+        </div>
+        <form method="get">
+            <p>
+                <label for="id_q">搜索</label>
+                <input id="id_q" type="text" name="q" value="{{ query }}" placeholder="赛事名 / 队伍 / 申请人">
+            </p>
+            <p>
+                <label for="id_status">审核状态</label>
+                <select id="id_status" name="status">
+                    <option value="">全部状态</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">应用筛选</button>
+                <a class="quick-link" href="{% url 'contest-submission-list-manage' %}">重置</a>
+            </div>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>申报列表</h3>
+            <span class="pill">{{ submissions|length }} 条</span>
+        </div>
+        <div class="feed-list">
+            {% for submission in submissions %}
+                <a class="feed-item" href="{% url 'contest-submission-detail-manage' submission.id %}">
+                    <div>
+                        <div class="feed-item-title">{{ submission.contest_name }}</div>
+                        <div class="feed-item-meta">{{ submission.team_name }} · {{ submission.applicant.member_profile.real_name|default:submission.applicant.username }}</div>
+                        <div class="feed-item-meta">{{ submission.contest_date|date:"Y-m-d" }} · {{ submission.get_award_type_display }}</div>
+                    </div>
+                    <span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                        {{ submission.get_review_status_display }}
+                    </span>
+                </a>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无申报</div>
+                        <div class="feed-item-meta">成员提交赛事奖项后会在这里等待审核。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

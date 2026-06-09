@@ -8,7 +8,18 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 
-from .models import AdminProfile, CheckInRecord, Event, MemberProfile, User
+from .competition import LEVEL_WEIGHT_MAP
+from .models import (
+    AdminProfile,
+    CheckInRecord,
+    Contest,
+    ContestResult,
+    ContestSubmission,
+    ContestTeam,
+    Event,
+    MemberProfile,
+    User,
+)
 
 
 USERNAME_EXAMPLE = '2330026083'
@@ -571,6 +582,259 @@ class AdminUpdateForm(forms.Form):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
         self.fields['email'].widget.attrs['autocomplete'] = 'email'
+
+
+class ContestForm(forms.ModelForm):
+    contest_date = forms.DateField(label='比赛日期', widget=forms.DateInput(attrs={'type': 'date'}))
+
+    class Meta:
+        model = Contest
+        fields = [
+            'name',
+            'series',
+            'season',
+            'stage',
+            'contest_date',
+            'organizer',
+            'level',
+            'weight',
+            'status',
+            'description',
+        ]
+        labels = {
+            'name': '赛事名称',
+            'series': '赛事系列',
+            'season': '赛季/学年',
+            'stage': '阶段',
+            'organizer': '主办方',
+            'level': '赛事级别',
+            'weight': '评分权重',
+            'status': '状态',
+            'description': '说明',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['season'].widget.attrs['placeholder'] = '2026'
+        self.fields['stage'].widget.attrs['placeholder'] = '区域赛 / 校内选拔'
+        self.fields['organizer'].widget.attrs['placeholder'] = '主办方，可选'
+        self.fields['description'].help_text = '可填写赛事背景、说明或收录口径。'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        level = cleaned_data.get('level')
+        weight = cleaned_data.get('weight')
+        if level and not weight:
+            cleaned_data['weight'] = LEVEL_WEIGHT_MAP.get(level)
+        return cleaned_data
+
+
+class ContestTeamForm(forms.ModelForm):
+    members = forms.ModelMultipleChoiceField(
+        label='队员列表',
+        queryset=MemberProfile.objects.none(),
+        help_text='可多选该队伍参赛成员。',
+    )
+    leader = forms.ModelChoiceField(
+        label='队长',
+        queryset=MemberProfile.objects.none(),
+        required=False,
+    )
+
+    class Meta:
+        model = ContestTeam
+        fields = ['team_name', 'members', 'external_member_names', 'leader', 'coach_name', 'note']
+        labels = {
+            'team_name': '队伍名称',
+            'external_member_names': '未建档队员',
+            'coach_name': '指导老师/带队老师',
+            'note': '备注',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        member_queryset = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
+        if self.instance and self.instance.pk:
+            existing_member_ids = list(self.instance.members.values_list('id', flat=True))
+            if existing_member_ids:
+                member_queryset = member_queryset | MemberProfile.objects.filter(id__in=existing_member_ids)
+            if self.instance.leader_id:
+                member_queryset = member_queryset | MemberProfile.objects.filter(id=self.instance.leader_id)
+        member_queryset = member_queryset.distinct().order_by('real_name')
+        self.fields['members'].queryset = member_queryset
+        self.fields['leader'].queryset = member_queryset
+        self.fields['members'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
+        self.fields['leader'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
+        self.fields['external_member_names'].widget.attrs['placeholder'] = '使用 顿号 分隔，例如 张三、李四'
+        self.fields['coach_name'].widget.attrs['placeholder'] = '可选'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        members = cleaned_data.get('members')
+        leader = cleaned_data.get('leader')
+        if leader and members is not None and leader not in members:
+            self.add_error('leader', '队长必须包含在所选队员中。')
+        return cleaned_data
+
+
+class ContestResultForm(forms.ModelForm):
+    verified = forms.BooleanField(label='立即认证', required=False)
+
+    class Meta:
+        model = ContestResult
+        fields = [
+            'team',
+            'award_type',
+            'award_label',
+            'rank_label',
+            'result_tier',
+            'manual_bonus',
+            'verified',
+            'evidence_url',
+            'note',
+        ]
+        labels = {
+            'team': '参赛队伍',
+            'award_type': '奖项类型',
+            'award_label': '奖项展示文案',
+            'rank_label': '名次描述',
+            'result_tier': '成绩层级',
+            'manual_bonus': '人工加分',
+            'evidence_url': '证据链接',
+            'note': '备注',
+        }
+
+    def __init__(self, contest, *args, **kwargs):
+        self.contest = contest
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        team_queryset = contest.teams.prefetch_related('members').order_by('team_name')
+        self.fields['team'].queryset = team_queryset
+        self.fields['team'].label_from_instance = lambda team: f'{team.team_name} · {team.member_names}'
+        self.fields['award_label'].required = False
+        self.fields['rank_label'].required = False
+        self.fields['evidence_url'].required = False
+        self.fields['manual_bonus'].help_text = '仅在默认口径不够表达时使用，可填正负整数。'
+        if self.instance and self.instance.pk:
+            self.fields['verified'].initial = self.instance.verified
+
+    def clean_award_label(self):
+        return self.cleaned_data['award_label'].strip()
+
+    def clean_rank_label(self):
+        return self.cleaned_data['rank_label'].strip()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        team = cleaned_data.get('team')
+        if team and team.contest_id != self.contest.id:
+            self.add_error('team', '所选队伍不属于当前赛事。')
+        if (
+            team
+            and ContestResult.objects.filter(contest=self.contest, team=team)
+            .exclude(pk=self.instance.pk)
+            .exists()
+        ):
+            self.add_error('team', '该队伍已经录入过成绩，请直接编辑原记录。')
+        return cleaned_data
+
+
+class ContestSubmissionForm(forms.ModelForm):
+    contest_date = forms.DateField(label='比赛日期', widget=forms.DateInput(attrs={'type': 'date'}))
+    team_members = forms.ModelMultipleChoiceField(
+        label='队内成员',
+        queryset=MemberProfile.objects.none(),
+        required=False,
+        help_text='可选择已经在系统中的队友；你自己会自动加入。',
+    )
+
+    class Meta:
+        model = ContestSubmission
+        fields = [
+            'contest_name',
+            'contest_series',
+            'contest_season',
+            'contest_stage',
+            'contest_date',
+            'organizer',
+            'contest_level',
+            'team_name',
+            'team_members',
+            'external_teammates',
+            'award_type',
+            'award_label',
+            'rank_label',
+            'result_tier',
+            'evidence_url',
+            'submission_note',
+        ]
+        labels = {
+            'contest_name': '赛事名称',
+            'contest_series': '赛事系列',
+            'contest_season': '赛季/学年',
+            'contest_stage': '阶段',
+            'organizer': '主办方',
+            'contest_level': '赛事级别',
+            'team_name': '队伍名称',
+            'external_teammates': '未建档队友',
+            'award_type': '奖项类型',
+            'award_label': '奖项展示文案',
+            'rank_label': '名次描述',
+            'result_tier': '成绩层级',
+            'evidence_url': '证据链接',
+            'submission_note': '补充说明',
+        }
+
+    def __init__(self, applicant_profile=None, *args, **kwargs):
+        self.applicant_profile = applicant_profile
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        member_queryset = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE).order_by('real_name')
+        self.fields['team_members'].queryset = member_queryset
+        self.fields['team_members'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
+        self.fields['contest_season'].widget.attrs['placeholder'] = '2026'
+        self.fields['contest_stage'].widget.attrs['placeholder'] = '区域赛 / 省赛 / 校内选拔'
+        self.fields['team_name'].widget.attrs['placeholder'] = '例如 BNBU Rising'
+        self.fields['external_teammates'].widget.attrs['placeholder'] = '用 顿号 分隔，例如 校外队友A、校外队友B'
+        self.fields['award_label'].required = False
+        self.fields['rank_label'].required = False
+        self.fields['evidence_url'].required = False
+        self.fields['submission_note'].required = False
+
+    def clean_external_teammates(self):
+        return self.cleaned_data['external_teammates'].strip()
+
+    def clean_award_label(self):
+        return self.cleaned_data['award_label'].strip()
+
+    def clean_rank_label(self):
+        return self.cleaned_data['rank_label'].strip()
+
+    def clean(self):
+        return super().clean()
+
+
+class ContestSubmissionReviewForm(ContestSubmissionForm):
+    linked_contest = forms.ModelChoiceField(
+        label='合并到已有赛事',
+        queryset=Contest.objects.none(),
+        required=False,
+        help_text='如该赛事已存在，可直接并入已有赛事；留空则按当前表单内容创建/更新正式赛事。',
+    )
+    review_note = forms.CharField(
+        label='审核说明',
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': '可填写通过/驳回原因，便于成员查看。'}),
+    )
+
+    def __init__(self, applicant_profile=None, *args, **kwargs):
+        super().__init__(applicant_profile=applicant_profile, *args, **kwargs)
+        self.fields['linked_contest'].queryset = Contest.objects.order_by('-contest_date', '-id')
+        self.fields['linked_contest'].label_from_instance = lambda contest: f'{contest.name} · {contest.contest_date:%Y-%m-%d}'
+        if self.instance and self.instance.pk and self.instance.resolved_contest_id:
+            self.fields['linked_contest'].initial = self.instance.resolved_contest_id
 
 
 class SystemSettingsForm(forms.Form):

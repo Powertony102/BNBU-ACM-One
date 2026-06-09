@@ -933,6 +933,12 @@
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-star-center' %}active{% endif %}" href="{% url 'member-star-center' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>ACM Star</span></span>
                             </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-competition-ladder' or request.resolver_match.url_name == 'member-competition-profile-public' %}active{% endif %}" href="{% url 'member-competition-ladder' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>竞赛天梯</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-contest-submission-list' or request.resolver_match.url_name == 'member-contest-submission-apply' %}active{% endif %}" href="{% url 'member-contest-submission-list' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项申报</span></span>
+                            </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-checkin-history' %}active{% endif %}" href="{% url 'member-checkin-history' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>签到历史</span></span>
                             </a>
@@ -953,6 +959,12 @@
                             </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'management-star-analytics' %}active{% endif %}" href="{% url 'management-star-analytics' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 统计</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'contest-list-manage' or request.resolver_match.url_name == 'contest-create' or request.resolver_match.url_name == 'contest-detail-manage' or request.resolver_match.url_name == 'contest-edit' or request.resolver_match.url_name == 'contest-archive' or request.resolver_match.url_name == 'contest-publish' or request.resolver_match.url_name == 'contest-team-create' or request.resolver_match.url_name == 'contest-team-edit' or request.resolver_match.url_name == 'contest-result-create' or request.resolver_match.url_name == 'contest-result-edit' or request.resolver_match.url_name == 'contest-result-revoke' or request.resolver_match.url_name == 'contest-result-restore' %}active{% endif %}" href="{% url 'contest-list-manage' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>赛事管理</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'contest-submission-list-manage' or request.resolver_match.url_name == 'contest-submission-detail-manage' or request.resolver_match.url_name == 'contest-submission-review' %}active{% endif %}" href="{% url 'contest-submission-list-manage' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项审核</span></span>
                             </a>
                             {% if request.user.role == 'super_admin' %}
                                 <a class="nav-item {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' %}active{% endif %}" href="{% url 'admin-list-manage' %}">

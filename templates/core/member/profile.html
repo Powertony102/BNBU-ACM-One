@@ -34,4 +34,81 @@
         </form>
     </article>
 </section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card">
+        <div class="card-header">
+            <h3>竞赛档案</h3>
+            <span class="badge {{ competition_snapshot.level.tone }}">{{ competition_snapshot.level.label }}</span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>当前等级：</strong><span class="muted" style="color: {{ competition_snapshot.profile.primary_color }};">{{ competition_snapshot.level.title }}</span></div>
+            <div><strong>当前 Rating：</strong><span class="muted">{{ competition_snapshot.profile.current_rating }}</span></div>
+            <div><strong>历史最高：</strong><span class="muted">{{ competition_snapshot.peak_level.label }} / {{ competition_snapshot.profile.peak_rating }}</span></div>
+            <div><strong>最高奖项：</strong><span class="muted">{{ competition_snapshot.profile.highest_award_label|default:"暂无已认证成绩" }}</span></div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>最近赛事</h3>
+            <a class="card-meta" href="{% url 'member-competition-ladder' %}">查看天梯</a>
+        </div>
+        <div class="feed-list">
+            {% for result in competition_snapshot.recent_results %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ result.contest.name }} · {{ result.display_award_label }}</div>
+                        <div class="feed-item-meta">{{ result.contest.contest_date|date:"Y-m-d" }} · {{ result.team.team_name }}</div>
+                        <div class="feed-item-meta">{{ result.rank_label|default:"未填写名次描述" }}</div>
+                    </div>
+                    <span class="badge live">+{{ result.rating_delta }}</span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无赛事记录</div>
+                        <div class="feed-item-meta">管理员认证赛事成绩后，这里会显示你的竞赛履历。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card" style="grid-column: span 2;">
+        <div class="card-header">
+            <h3>完整赛事时间线</h3>
+            <span class="pill">{{ competition_snapshot.all_results|length }} 条</span>
+        </div>
+        <div class="feed-list">
+            {% for result in competition_snapshot.all_results %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ result.contest.name }} · {{ result.display_award_label }}</div>
+                        <div class="feed-item-meta">
+                            {{ result.contest.contest_date|date:"Y-m-d" }}
+                            {% if result.contest.stage %} · {{ result.contest.stage }}{% endif %}
+                            · {{ result.team.team_name }}
+                        </div>
+                        <div class="feed-item-meta">队伍成员：{{ result.team.member_names }}</div>
+                        <div class="feed-item-meta">{{ result.rank_label|default:"未填写名次描述" }}</div>
+                    </div>
+                    <div class="stack" style="gap: 8px; align-items: flex-end;">
+                        <span class="badge live">+{{ result.rating_delta }}</span>
+                        <span class="muted">{{ result.contest.get_level_display }}</span>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无完整时间线</div>
+                        <div class="feed-item-meta">当前还没有已认证赛事成绩进入你的竞赛履历。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
 {% endblock %}

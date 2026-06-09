@@ -8,7 +8,22 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import AdminProfile, CheckInRecord, EmailVerificationCode, Event, EventQRCode, MemberProfile, User
+from .competition import sync_member_competition_profile
+from .forms import ContestTeamForm
+from .models import (
+    AdminProfile,
+    CheckInRecord,
+    Contest,
+    ContestResult,
+    ContestSubmission,
+    ContestTeam,
+    EmailVerificationCode,
+    Event,
+    EventQRCode,
+    MemberCompetitionProfile,
+    MemberProfile,
+    User,
+)
 
 
 class ACMStarViewsTests(TestCase):
@@ -798,3 +813,511 @@ class BootstrapDemoCommandTests(TestCase):
         self.assertEqual(superadmin.email, 'superadmin@mail.bnbu.edu.cn')
         self.assertEqual(member.email, 'member01@example.com')
         self.assertEqual(member.member_profile.email, 'member01@example.com')
+
+
+class ContestRatingTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin_user = User.objects.create_user(
+            username='contest-admin',
+            password='AdminPassword2026!',
+            role=User.Roles.ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=cls.admin_user,
+            display_name='赛事管理员',
+            admin_level=AdminProfile.Level.ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+        cls.member_user = User.objects.create_user(
+            username='contest-member',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        cls.member_profile = MemberProfile.objects.create(
+            user=cls.member_user,
+            real_name='竞赛队员',
+            student_id='2430026111',
+            email='u430026111@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        cls.contest = Contest.objects.create(
+            name='CCPC 校内选拔',
+            series=Contest.Series.CCPC,
+            season='2026',
+            stage='校内选拔',
+            contest_date=timezone.localdate() - timedelta(days=30),
+            level=Contest.Level.CAMPUS,
+            weight=1.00,
+            status=Contest.Status.PUBLISHED,
+            created_by=cls.admin_user,
+        )
+        cls.team = ContestTeam.objects.create(
+            contest=cls.contest,
+            team_name='BNBU Rising',
+            leader=cls.member_profile,
+        )
+        cls.team.members.add(cls.member_profile)
+
+    def test_sync_member_competition_profile_uses_verified_results(self):
+        result = ContestResult.objects.create(
+            contest=self.contest,
+            team=self.team,
+            award_type=ContestResult.AwardType.SILVER,
+            award_label='校赛银奖',
+            rank_label='第 2 名',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+
+        competition_profile = sync_member_competition_profile(self.member_profile)
+
+        self.assertEqual(competition_profile.current_rating, 100)
+        self.assertEqual(competition_profile.current_level, 'rookie')
+        self.assertEqual(competition_profile.highest_award_label, '校赛银奖')
+        result.refresh_from_db()
+        self.assertEqual(result.rating_delta, 100)
+
+    def test_management_and_member_pages_show_competition_modules(self):
+        result = ContestResult.objects.create(
+            contest=self.contest,
+            team=self.team,
+            award_type=ContestResult.AwardType.BRONZE,
+            award_label='校赛铜奖',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+        sync_member_competition_profile(self.member_profile)
+
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        management_dashboard_response = self.client.get(reverse('management-dashboard'))
+        management_response = self.client.get(reverse('contest-detail-manage', args=[self.contest.id]))
+        self.assertEqual(management_dashboard_response.status_code, 200)
+        self.assertContains(management_dashboard_response, '赛事管理')
+        self.assertContains(management_dashboard_response, '奖项审核')
+        self.assertEqual(management_response.status_code, 200)
+        self.assertContains(management_response, 'BNBU Rising')
+        self.assertContains(management_response, '校赛铜奖')
+
+        self.client.logout()
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        member_dashboard_response = self.client.get(reverse('member-dashboard'))
+        profile_response = self.client.get(reverse('member-profile'))
+        ladder_response = self.client.get(reverse('member-competition-ladder'))
+
+        self.assertEqual(member_dashboard_response.status_code, 200)
+        self.assertContains(member_dashboard_response, '竞赛天梯')
+        self.assertContains(member_dashboard_response, '奖项申报')
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertContains(profile_response, '竞赛档案')
+        self.assertContains(profile_response, '校赛铜奖')
+
+        self.assertEqual(ladder_response.status_code, 200)
+        self.assertContains(ladder_response, '竞赛天梯')
+        self.assertContains(ladder_response, '竞赛队员')
+        self.assertTrue(MemberCompetitionProfile.objects.filter(member=self.member_profile).exists())
+
+    def test_revoke_result_and_archive_contest_update_status_and_rating(self):
+        result = ContestResult.objects.create(
+            contest=self.contest,
+            team=self.team,
+            award_type=ContestResult.AwardType.GOLD,
+            award_label='校赛金奖',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+        sync_member_competition_profile(self.member_profile)
+
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        revoke_response = self.client.post(reverse('contest-result-revoke', args=[result.id]), follow=True)
+        self.assertEqual(revoke_response.status_code, 200)
+
+        result.refresh_from_db()
+        self.assertTrue(result.is_revoked)
+        self.assertFalse(result.verified)
+
+        competition_profile = MemberCompetitionProfile.objects.get(member=self.member_profile)
+        self.assertEqual(competition_profile.current_rating, 0)
+
+        restored_response = self.client.post(reverse('contest-result-restore', args=[result.id]), follow=True)
+        self.assertEqual(restored_response.status_code, 200)
+        competition_profile.refresh_from_db()
+        self.assertGreater(competition_profile.current_rating, 0)
+
+        archive_response = self.client.post(reverse('contest-archive', args=[self.contest.id]), follow=True)
+        self.assertEqual(archive_response.status_code, 200)
+        self.contest.refresh_from_db()
+        self.assertEqual(self.contest.status, Contest.Status.ARCHIVED)
+        competition_profile.refresh_from_db()
+        self.assertEqual(competition_profile.current_rating, 0)
+
+        publish_response = self.client.post(reverse('contest-publish', args=[self.contest.id]), follow=True)
+        self.assertEqual(publish_response.status_code, 200)
+        competition_profile.refresh_from_db()
+        self.assertGreater(competition_profile.current_rating, 0)
+
+    def test_ladder_filters_and_profile_timeline_show_expected_results(self):
+        second_user = User.objects.create_user(
+            username='contest-member-2',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        second_profile = MemberProfile.objects.create(
+            user=second_user,
+            real_name='另一位队员',
+            student_id='2430026222',
+            email='u430026222@mail.bnbu.edu.cn',
+            major='DS',
+            enrollment_year=2023,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        second_team = ContestTeam.objects.create(
+            contest=self.contest,
+            team_name='BNBU Data',
+            leader=second_profile,
+        )
+        second_team.members.add(second_profile)
+
+        first_result = ContestResult.objects.create(
+            contest=self.contest,
+            team=self.team,
+            award_type=ContestResult.AwardType.SILVER,
+            award_label='校赛银奖',
+            rank_label='第 2 名',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+        second_result = ContestResult.objects.create(
+            contest=self.contest,
+            team=second_team,
+            award_type=ContestResult.AwardType.PARTICIPATION,
+            award_label='正式参赛',
+            rank_label='完成参赛',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+        sync_member_competition_profile(self.member_profile)
+        sync_member_competition_profile(second_profile)
+
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        filtered_ladder = self.client.get(
+            reverse('member-competition-ladder'),
+            {'major': 'CST', 'level': 'rookie'},
+        )
+        profile_response = self.client.get(reverse('member-profile'))
+
+        self.assertContains(filtered_ladder, '竞赛队员')
+        self.assertNotContains(filtered_ladder, '另一位队员')
+        self.assertContains(profile_response, '完整赛事时间线')
+        self.assertContains(profile_response, first_result.rank_label)
+        self.assertNotContains(profile_response, second_result.award_label)
+
+        public_profile_response = self.client.get(
+            reverse('member-competition-profile-public', args=[second_profile.id])
+        )
+        self.assertEqual(public_profile_response.status_code, 200)
+        self.assertContains(public_profile_response, '另一位队员')
+        self.assertContains(public_profile_response, second_result.award_label)
+        self.assertNotContains(public_profile_response, second_profile.email)
+
+    def test_team_form_keeps_existing_inactive_members_editable(self):
+        self.member_profile.status = MemberProfile.Status.INACTIVE
+        self.member_profile.save(update_fields=['status'])
+
+        form = ContestTeamForm(instance=self.team)
+
+        self.assertIn(self.member_profile, form.fields['members'].queryset)
+        self.assertIn(self.member_profile, form.fields['leader'].queryset)
+
+    def test_peak_rating_recomputes_after_result_is_revoked(self):
+        result = ContestResult.objects.create(
+            contest=self.contest,
+            team=self.team,
+            award_type=ContestResult.AwardType.GOLD,
+            award_label='校赛金奖',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+        competition_profile = sync_member_competition_profile(self.member_profile)
+        self.assertGreater(competition_profile.peak_rating, 0)
+
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        self.client.post(reverse('contest-result-revoke', args=[result.id]), follow=True)
+
+        competition_profile.refresh_from_db()
+        self.assertEqual(competition_profile.current_rating, 0)
+        self.assertEqual(competition_profile.peak_rating, 0)
+
+    def test_management_contest_list_filters_results(self):
+        Contest.objects.create(
+            name='ICPC 区域赛',
+            series=Contest.Series.ICPC,
+            season='2025',
+            stage='区域赛',
+            contest_date=timezone.localdate() - timedelta(days=400),
+            level=Contest.Level.REGIONAL,
+            weight=1.40,
+            status=Contest.Status.ARCHIVED,
+            created_by=self.admin_user,
+        )
+
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        response = self.client.get(
+            reverse('contest-list-manage'),
+            {
+                'series': Contest.Series.CCPC,
+                'status': Contest.Status.PUBLISHED,
+                'season': '2026',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'CCPC 校内选拔')
+        self.assertNotContains(response, 'ICPC 区域赛')
+
+    def test_member_submission_can_be_reviewed_into_official_result(self):
+        teammate_user = User.objects.create_user(
+            username='contest-member-3',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        teammate_profile = MemberProfile.objects.create(
+            user=teammate_user,
+            real_name='队友三号',
+            student_id='2430026333',
+            email='u430026333@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        submit_response = self.client.post(
+            reverse('member-contest-submission-apply'),
+            {
+                'contest_name': '华东邀请赛',
+                'contest_series': Contest.Series.INVITATIONAL,
+                'contest_season': '2026',
+                'contest_stage': '邀请赛',
+                'contest_date': timezone.localdate(),
+                'organizer': '组委会',
+                'contest_level': Contest.Level.PROVINCIAL,
+                'team_name': 'BNBU Lights',
+                'team_members': [teammate_profile.id],
+                'external_teammates': '校外队友甲',
+                'award_type': ContestResult.AwardType.BRONZE,
+                'award_label': '邀请赛铜奖',
+                'rank_label': '第 8 名',
+                'result_tier': ContestResult.ResultTier.MEDIUM,
+                'evidence_url': 'https://example.com/proof',
+                'submission_note': '成员自助申报',
+            },
+            follow=True,
+        )
+        self.assertEqual(submit_response.status_code, 200)
+        submission = ContestSubmission.objects.get(applicant=self.member_user)
+        self.assertEqual(submission.review_status, ContestSubmission.ReviewStatus.PENDING)
+        self.assertEqual(submission.team_members.count(), 2)
+
+        self.client.logout()
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        review_response = self.client.post(
+            reverse('contest-submission-review', args=[submission.id]),
+            {
+                'contest_name': '华东邀请赛',
+                'contest_series': Contest.Series.INVITATIONAL,
+                'contest_season': '2026',
+                'contest_stage': '正式邀请赛',
+                'contest_date': timezone.localdate(),
+                'organizer': '组委会',
+                'contest_level': Contest.Level.REGIONAL,
+                'team_name': 'BNBU Lights',
+                'team_members': [self.member_profile.id, teammate_profile.id],
+                'external_teammates': '校外队友甲',
+                'award_type': ContestResult.AwardType.SILVER,
+                'award_label': '最终银奖',
+                'rank_label': '第 6 名',
+                'result_tier': ContestResult.ResultTier.HIGH,
+                'evidence_url': 'https://example.com/final-proof',
+                'submission_note': '管理员修订后通过',
+                'review_note': '信息已核对',
+                'decision': 'approve',
+            },
+            follow=True,
+        )
+        self.assertEqual(review_response.status_code, 200)
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.review_status, ContestSubmission.ReviewStatus.APPROVED)
+        self.assertIsNotNone(submission.resolved_result)
+        self.assertEqual(submission.resolved_result.display_award_label, '最终银奖')
+        self.assertEqual(submission.resolved_team.external_member_names, '校外队友甲')
+
+        profile = MemberCompetitionProfile.objects.get(member=self.member_profile)
+        self.assertGreater(profile.current_rating, 0)
+
+    def test_reviewing_submission_cannot_overwrite_existing_official_result(self):
+        official_result = ContestResult.objects.create(
+            contest=self.contest,
+            team=self.team,
+            award_type=ContestResult.AwardType.GOLD,
+            award_label='原始金奖',
+            rank_label='第 1 名',
+            verified=True,
+            verified_by=self.admin_user,
+            verified_at=timezone.now(),
+        )
+        submission = ContestSubmission.objects.create(
+            applicant=self.member_user,
+            contest_name=self.contest.name,
+            contest_series=self.contest.series,
+            contest_season=self.contest.season,
+            contest_stage=self.contest.stage,
+            contest_date=self.contest.contest_date,
+            organizer=self.contest.organizer,
+            contest_level=self.contest.level,
+            team_name=self.team.team_name,
+            award_type=ContestResult.AwardType.SILVER,
+            award_label='成员申报银奖',
+            rank_label='第 2 名',
+            result_tier=ContestResult.ResultTier.HIGH,
+            evidence_url='https://example.com/submission-proof',
+            submission_note='试图覆盖正式成绩',
+        )
+        submission.team_members.add(self.member_profile)
+
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('contest-submission-review', args=[submission.id]),
+            {
+                'contest_name': self.contest.name,
+                'contest_series': self.contest.series,
+                'contest_season': self.contest.season,
+                'contest_stage': self.contest.stage,
+                'contest_date': self.contest.contest_date,
+                'organizer': self.contest.organizer,
+                'contest_level': self.contest.level,
+                'linked_contest': self.contest.id,
+                'team_name': self.team.team_name,
+                'team_members': [self.member_profile.id],
+                'external_teammates': '',
+                'award_type': ContestResult.AwardType.SILVER,
+                'award_label': '成员申报银奖',
+                'rank_label': '第 2 名',
+                'result_tier': ContestResult.ResultTier.HIGH,
+                'evidence_url': 'https://example.com/submission-proof',
+                'submission_note': '试图覆盖正式成绩',
+                'review_note': '发现冲突',
+                'decision': 'approve',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '审核未通过，请先处理正式赛事成绩冲突。')
+        self.assertContains(response, '该赛事队伍已经存在正式成绩，请直接编辑原成绩，不能通过申报覆盖。')
+
+        submission.refresh_from_db()
+        official_result.refresh_from_db()
+        self.assertEqual(submission.review_status, ContestSubmission.ReviewStatus.PENDING)
+        self.assertEqual(submission.resolved_result_id, None)
+        self.assertEqual(official_result.display_award_label, '原始金奖')
+        self.assertEqual(ContestResult.objects.filter(contest=self.contest, team=self.team).count(), 1)
+
+    def test_rejecting_approved_submission_revokes_official_result_and_rating(self):
+        submission = ContestSubmission.objects.create(
+            applicant=self.member_user,
+            contest_name='华东邀请赛',
+            contest_series=Contest.Series.INVITATIONAL,
+            contest_season='2026',
+            contest_stage='邀请赛',
+            contest_date=timezone.localdate(),
+            organizer='组委会',
+            contest_level=Contest.Level.REGIONAL,
+            team_name='BNBU Lights',
+            award_type=ContestResult.AwardType.SILVER,
+            award_label='成员申报银奖',
+            rank_label='第 6 名',
+            result_tier=ContestResult.ResultTier.HIGH,
+            evidence_url='https://example.com/final-proof',
+            submission_note='管理员修订后通过',
+        )
+        submission.team_members.add(self.member_profile)
+
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        approve_response = self.client.post(
+            reverse('contest-submission-review', args=[submission.id]),
+            {
+                'contest_name': '华东邀请赛',
+                'contest_series': Contest.Series.INVITATIONAL,
+                'contest_season': '2026',
+                'contest_stage': '正式邀请赛',
+                'contest_date': timezone.localdate(),
+                'organizer': '组委会',
+                'contest_level': Contest.Level.REGIONAL,
+                'team_name': 'BNBU Lights',
+                'team_members': [self.member_profile.id],
+                'external_teammates': '',
+                'award_type': ContestResult.AwardType.SILVER,
+                'award_label': '最终银奖',
+                'rank_label': '第 6 名',
+                'result_tier': ContestResult.ResultTier.HIGH,
+                'evidence_url': 'https://example.com/final-proof',
+                'submission_note': '管理员修订后通过',
+                'review_note': '信息已核对',
+                'decision': 'approve',
+            },
+            follow=True,
+        )
+        self.assertEqual(approve_response.status_code, 200)
+
+        submission.refresh_from_db()
+        result = submission.resolved_result
+        competition_profile = MemberCompetitionProfile.objects.get(member=self.member_profile)
+        self.assertEqual(submission.review_status, ContestSubmission.ReviewStatus.APPROVED)
+        self.assertTrue(result.verified)
+        self.assertGreater(competition_profile.current_rating, 0)
+
+        reject_response = self.client.post(
+            reverse('contest-submission-review', args=[submission.id]),
+            {
+                'contest_name': '华东邀请赛',
+                'contest_series': Contest.Series.INVITATIONAL,
+                'contest_season': '2026',
+                'contest_stage': '正式邀请赛',
+                'contest_date': timezone.localdate(),
+                'organizer': '组委会',
+                'contest_level': Contest.Level.REGIONAL,
+                'linked_contest': submission.resolved_contest_id,
+                'team_name': 'BNBU Lights',
+                'team_members': [self.member_profile.id],
+                'external_teammates': '',
+                'award_type': ContestResult.AwardType.SILVER,
+                'award_label': '最终银奖',
+                'rank_label': '第 6 名',
+                'result_tier': ContestResult.ResultTier.HIGH,
+                'evidence_url': 'https://example.com/final-proof',
+                'submission_note': '管理员复核后驳回',
+                'review_note': '复核驳回',
+                'decision': 'reject',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(reject_response.status_code, 200)
+        submission.refresh_from_db()
+        result.refresh_from_db()
+        competition_profile.refresh_from_db()
+        self.assertEqual(submission.review_status, ContestSubmission.ReviewStatus.REJECTED)
+        self.assertFalse(result.verified)
+        self.assertTrue(result.is_revoked)
+        self.assertEqual(competition_profile.current_rating, 0)

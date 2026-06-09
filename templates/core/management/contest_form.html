@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | One BNBU-ACM{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">赛事基础信息</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ page_title }}</h2>
+    <p>填写赛事系列、级别和时间信息，系统会基于级别权重参与后续 Rating 计算。</p>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">保存赛事</button>
+                <a class="quick-link" href="{% if contest %}{% url 'contest-detail-manage' contest.id %}{% else %}{% url 'contest-list-manage' %}{% endif %}">返回</a>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}
