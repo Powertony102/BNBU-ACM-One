@@ -1488,7 +1488,6 @@ class ContestRatingTests(TestCase):
                 'contest_name': '华东邀请赛',
                 'contest_series': Contest.Series.INVITATIONAL,
                 'contest_season': '2026',
-                'contest_stage': '邀请赛',
                 'contest_date': timezone.localdate(),
                 'organizer': '组委会',
                 'contest_level': Contest.Level.PROVINCIAL,
@@ -1507,6 +1506,7 @@ class ContestRatingTests(TestCase):
         self.assertEqual(submit_response.status_code, 200)
         submission = ContestSubmission.objects.get(applicant=self.member_user)
         self.assertEqual(submission.review_status, ContestSubmission.ReviewStatus.PENDING)
+        self.assertEqual(submission.contest_stage, '')
         self.assertEqual(submission.team_members.count(), 2)
 
         self.client.logout()
@@ -1550,6 +1550,8 @@ class ContestRatingTests(TestCase):
         self.client.login(username='contest-member', password='MemberPassword2026!')
         response = self.client.get(reverse('member-contest-submission-apply'))
         self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, '阶段')
+        self.assertNotContains(response, 'name="contest_stage"', html=False)
         self.assertNotContains(response, '证据链接')
         self.assertNotContains(response, 'name="evidence_url"', html=False)
 
@@ -1794,7 +1796,6 @@ class ContestRatingTests(TestCase):
                 'contest_name': '链接队伍测试赛',
                 'contest_series': Contest.Series.INVITATIONAL,
                 'contest_season': '2026',
-                'contest_stage': '测试赛',
                 'contest_date': timezone.localdate(),
                 'organizer': '组委会',
                 'contest_level': Contest.Level.CAMPUS,
@@ -1814,6 +1815,7 @@ class ContestRatingTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         submission = ContestSubmission.objects.get(contest_name='链接队伍测试赛')
+        self.assertEqual(submission.contest_stage, '')
         self.assertEqual(submission.linked_member_team, member_team)
         self.assertEqual(submission.team_name, 'BNBU Direct Fill')
         self.assertEqual(submission.external_teammates, '')

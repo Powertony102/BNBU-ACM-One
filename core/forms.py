@@ -950,7 +950,7 @@ class ContestSubmissionForm(forms.ModelForm):
             'submission_note': '补充说明',
         }
 
-    def __init__(self, applicant_profile=None, show_evidence_url=True, *args, **kwargs):
+    def __init__(self, applicant_profile=None, show_evidence_url=True, show_contest_stage=False, *args, **kwargs):
         self.applicant_profile = applicant_profile
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
@@ -976,7 +976,10 @@ class ContestSubmissionForm(forms.ModelForm):
         self.fields['team_members'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
         self.fields['team_name'].required = False
         self.fields['contest_season'].widget.attrs['placeholder'] = '2026'
-        self.fields['contest_stage'].widget.attrs['placeholder'] = '区域赛 / 省赛 / 校内选拔'
+        if show_contest_stage:
+            self.fields['contest_stage'].widget.attrs['placeholder'] = '区域赛 / 省赛 / 校内选拔'
+        else:
+            self.fields.pop('contest_stage')
         self.fields['team_name'].widget.attrs['placeholder'] = '例如 BNBU Rising'
         self.fields['external_teammates'].widget.attrs['placeholder'] = '用 顿号 分隔，例如 校外队友A、校外队友B'
         self.fields['award_label'].required = False
@@ -1023,7 +1026,7 @@ class ContestSubmissionReviewForm(ContestSubmissionForm):
     )
 
     def __init__(self, applicant_profile=None, *args, **kwargs):
-        super().__init__(applicant_profile=applicant_profile, *args, **kwargs)
+        super().__init__(applicant_profile=applicant_profile, show_contest_stage=True, *args, **kwargs)
         self.fields['linked_contest'].queryset = Contest.objects.order_by('-contest_date', '-id')
         self.fields['linked_contest'].label_from_instance = lambda contest: f'{contest.name} · {contest.contest_date:%Y-%m-%d}'
         if self.instance and self.instance.pk and self.instance.resolved_contest_id:
