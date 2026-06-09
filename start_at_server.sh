@@ -81,6 +81,14 @@ echo ""
 echo "[3/7] 执行数据库迁移..."
 python manage.py migrate --noinput
 
+# 设置数据库文件权限（SQLite 需要写权限）
+if [[ -f "${BACKEND_DIR}/db.sqlite3" ]]; then
+    chown "${WWW_USER}:${WWW_GROUP}" "${BACKEND_DIR}/db.sqlite3"
+    chmod 664 "${BACKEND_DIR}/db.sqlite3"
+fi
+chown "${WWW_USER}:${WWW_GROUP}" "${BACKEND_DIR}"
+chmod 775 "${BACKEND_DIR}"
+
 # ----- 4. 收集静态文件 -----
 echo ""
 echo "[4/7] 收集静态文件..."
