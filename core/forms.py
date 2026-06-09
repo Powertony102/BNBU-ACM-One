@@ -951,18 +951,19 @@ class ContestSubmissionForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
         member_queryset = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE).order_by('real_name')
-        team_queryset = MemberTeam.objects.none()
+        team_filters = Q()
         if applicant_profile is not None:
-            team_queryset = (
-                MemberTeam.objects.filter(members=applicant_profile)
-                .select_related('captain')
-                .distinct()
-                .order_by('name', 'id')
-            )
+            team_filters |= Q(members=applicant_profile)
         if self.instance and self.instance.pk and self.instance.linked_member_team_id:
-            team_queryset = (
-                team_queryset | MemberTeam.objects.filter(id=self.instance.linked_member_team_id).select_related('captain')
-            ).distinct().order_by('name', 'id')
+            team_filters |= Q(id=self.instance.linked_member_team_id)
+        team_queryset = (
+            MemberTeam.objects.filter(team_filters)
+            .select_related('captain')
+            .distinct()
+            .order_by('name', 'id')
+            if team_filters
+            else MemberTeam.objects.none()
+        )
         self.fields['linked_member_team'].queryset = team_queryset
         self.fields['linked_member_team'].label_from_instance = (
             lambda team: f'{team.name} · 队长 {team.captain.real_name if team.captain else "待定"}'
