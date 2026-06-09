@@ -1570,7 +1570,7 @@ class ContestRatingTests(TestCase):
         response = self.client.get(reverse('member-team-edit', args=[member_team.id]))
         self.assertEqual(response.status_code, 403)
 
-    def test_linking_member_team_in_submission_does_not_override_submission_members(self):
+    def test_submission_team_dropdown_only_shows_current_member_teams(self):
         teammate_user = User.objects.create_user(
             username='contest-member-8',
             password='MemberPassword2026!',
@@ -1606,6 +1606,70 @@ class ContestRatingTests(TestCase):
             updated_by=self.admin_user,
         )
         member_team.members.add(self.member_profile, teammate_profile, third_profile)
+        outsider_user = User.objects.create_user(
+            username='contest-member-10',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        outsider_profile = MemberProfile.objects.create(
+            user=outsider_user,
+            real_name='队外十号',
+            student_id='2430027000',
+            email='u430027000@mail.bnbu.edu.cn',
+            major='AI',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        outsider_team = MemberTeam.objects.create(
+            name='BNBU Hidden Team',
+            captain=outsider_profile,
+            created_by=self.admin_user,
+            updated_by=self.admin_user,
+        )
+        outsider_team.members.add(outsider_profile, teammate_profile, third_profile)
+
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        response = self.client.get(reverse('member-contest-submission-apply'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'BNBU Optional Link')
+        self.assertNotContains(response, 'BNBU Hidden Team')
+
+    def test_linking_member_team_in_submission_directly_writes_team_info(self):
+        teammate_user = User.objects.create_user(
+            username='contest-member-11',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        teammate_profile = MemberProfile.objects.create(
+            user=teammate_user,
+            real_name='队友十一号',
+            student_id='2430027111',
+            email='u430027111@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        third_user = User.objects.create_user(
+            username='contest-member-12',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        third_profile = MemberProfile.objects.create(
+            user=third_user,
+            real_name='队友十二号',
+            student_id='2430027222',
+            email='u430027222@mail.bnbu.edu.cn',
+            major='DS',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        member_team = MemberTeam.objects.create(
+            name='BNBU Direct Fill',
+            captain=self.member_profile,
+            created_by=self.admin_user,
+            updated_by=self.admin_user,
+        )
+        member_team.members.add(self.member_profile, teammate_profile, third_profile)
 
         self.client.login(username='contest-member', password='MemberPassword2026!')
         response = self.client.post(
@@ -1619,9 +1683,9 @@ class ContestRatingTests(TestCase):
                 'organizer': '组委会',
                 'contest_level': Contest.Level.CAMPUS,
                 'linked_member_team': member_team.id,
-                'team_name': '临时申报队名',
-                'team_members': [teammate_profile.id],
-                'external_teammates': '',
+                'team_name': '',
+                'team_members': [],
+                'external_teammates': '不会被保存',
                 'award_type': ContestResult.AwardType.PARTICIPATION,
                 'award_label': '',
                 'rank_label': '',
@@ -1635,12 +1699,13 @@ class ContestRatingTests(TestCase):
 
         submission = ContestSubmission.objects.get(contest_name='链接队伍测试赛')
         self.assertEqual(submission.linked_member_team, member_team)
+        self.assertEqual(submission.team_name, 'BNBU Direct Fill')
+        self.assertEqual(submission.external_teammates, '')
         self.assertQuerysetEqual(
             submission.team_members.order_by('id'),
-            [self.member_profile, teammate_profile],
+            [self.member_profile, teammate_profile, third_profile],
             transform=lambda profile: profile,
         )
-        self.assertNotIn(third_profile, submission.team_members.all())
 
     def test_reviewing_submission_cannot_overwrite_existing_official_result(self):
         official_result = ContestResult.objects.create(

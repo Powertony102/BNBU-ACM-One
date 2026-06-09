@@ -898,7 +898,7 @@ class ContestSubmissionForm(forms.ModelForm):
         label='选择队伍（可选）',
         queryset=MemberTeam.objects.none(),
         required=False,
-        help_text='仅作为关联队伍展示，不会自动覆盖下面填写的申报信息。',
+        help_text='这里只会显示你当前所在的已生效队伍；选中后会直接带入队伍名称和队内成员。',
     )
     team_members = forms.ModelMultipleChoiceField(
         label='队内成员',
@@ -969,6 +969,7 @@ class ContestSubmissionForm(forms.ModelForm):
         )
         self.fields['team_members'].queryset = member_queryset
         self.fields['team_members'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
+        self.fields['team_name'].required = False
         self.fields['contest_season'].widget.attrs['placeholder'] = '2026'
         self.fields['contest_stage'].widget.attrs['placeholder'] = '区域赛 / 省赛 / 校内选拔'
         self.fields['team_name'].widget.attrs['placeholder'] = '例如 BNBU Rising'
@@ -988,7 +989,16 @@ class ContestSubmissionForm(forms.ModelForm):
         return self.cleaned_data['rank_label'].strip()
 
     def clean(self):
-        return super().clean()
+        cleaned_data = super().clean()
+        linked_member_team = cleaned_data.get('linked_member_team')
+        if linked_member_team:
+            team_members = list(linked_member_team.members.order_by('real_name', 'student_id'))
+            cleaned_data['team_name'] = linked_member_team.name
+            cleaned_data['team_members'] = team_members
+            cleaned_data['external_teammates'] = ''
+        elif not cleaned_data.get('team_name', '').strip():
+            self.add_error('team_name', '未选择队伍时，请填写队伍名称。')
+        return cleaned_data
 
 
 class ContestSubmissionReviewForm(ContestSubmissionForm):

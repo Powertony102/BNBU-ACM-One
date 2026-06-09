@@ -567,6 +567,17 @@ def build_member_team_submission_form_context(form):
     }
 
 
+def build_member_team_prefill_map(team_queryset):
+    return {
+        str(team.id): {
+            'name': team.name,
+            'member_ids': [member.id for member in team.members.all()],
+            'member_names': [member.real_name for member in team.members.all()],
+        }
+        for team in team_queryset.prefetch_related('members')
+    }
+
+
 @transaction.atomic
 def approve_member_team_submission(submission, cleaned_data, operator):
     members = list(cleaned_data.get('members') or [])
@@ -1204,6 +1215,7 @@ def member_contest_submission_apply(request):
         {
             'form': form,
             'page_title': '申报赛事奖项',
+            'member_team_prefill_map': build_member_team_prefill_map(form.fields['linked_member_team'].queryset),
         },
     )
 
