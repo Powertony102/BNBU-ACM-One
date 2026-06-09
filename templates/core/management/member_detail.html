@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}成员详情 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}成员详情{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">{{ member.real_name }} 的治理视图</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ member.real_name }}</h2>
+    <p>在这里可以查看该成员的基础资料、当前竞赛档案，以及设置或解除诚信处罚。</p>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'member-list-manage' %}">返回成员列表</a>
+        <a class="quick-link" href="{% url 'management-dashboard' %}">返回管理首页</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>基础资料</h3>
+            <span class="badge {% if member.status == 'active' %}live{% else %}warn{% endif %}">{{ member.get_status_display }}</span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>姓名：</strong><span class="muted">{{ member.real_name }}</span></div>
+            <div><strong>学号：</strong><span class="muted">{{ member.student_id }}</span></div>
+            <div><strong>用户名：</strong><span class="muted">{{ member.user.username }}</span></div>
+            <div><strong>邮箱：</strong><span class="muted">{{ member.email|default:member.user.email|default:"未填写" }}</span></div>
+            <div><strong>专业：</strong><span class="muted">{{ member.major|default:"未填写专业" }}</span></div>
+            <div><strong>入学年份：</strong><span class="muted">{{ member.enrollment_year|default:"未填写" }}</span></div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>竞赛档案摘要</h3>
+            <span class="badge {{ competition_snapshot.level.tone }}">{{ competition_snapshot.level.label }}</span>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>当前等级：</strong><span class="muted" style="color: {{ competition_snapshot.display_color }};">{{ competition_snapshot.level.title }}</span></div>
+            <div><strong>当前 Rating：</strong><span class="muted">{{ competition_snapshot.profile.current_rating }}</span></div>
+            <div><strong>历史最高：</strong><span class="muted">{{ competition_snapshot.peak_level.label }} / {{ competition_snapshot.profile.peak_rating }}</span></div>
+            <div><strong>最高奖项：</strong><span class="muted">{{ competition_snapshot.profile.highest_award_label|default:"暂无已认证成绩" }}</span></div>
+            <div><strong>ACM Star：</strong><span class="muted">{% if star_snapshot.lit %}当前点亮{% else %}当前熄灭{% endif %}</span></div>
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card">
+        <div class="card-header">
+            <h3>当前诚信状态</h3>
+            <span class="badge {% if is_currently_restricted %}dim{% else %}live{% endif %}">
+                {% if is_currently_restricted %}处罚期中{% elif current_sanction %}待生效{% else %}正常{% endif %}
+            </span>
+        </div>
+        {% if current_sanction %}
+            <div class="stack" style="gap: 10px;">
+                <div><strong>公开文案：</strong><span class="muted">{{ current_sanction.public_notice }}</span></div>
+                <div><strong>处罚原因：</strong><span class="muted">{{ current_sanction.get_reason_type_display }}</span></div>
+                <div><strong>生效时间：</strong><span class="muted">{{ current_sanction.starts_at|date:"Y-m-d H:i" }}</span></div>
+                <div><strong>截止时间：</strong><span class="muted">{{ current_sanction.ends_at|date:"Y-m-d H:i" }}</span></div>
+                <div><strong>对成员可见原因：</strong><span class="muted">{{ current_sanction.member_reason|default:"未填写" }}</span></div>
+                <div><strong>内部备注：</strong><span class="muted">{{ current_sanction.internal_note|default:"未填写" }}</span></div>
+            </div>
+            <form method="post" action="{% url 'member-integrity-sanction-revoke' member.id %}" style="margin-top: 16px;">
+                {% csrf_token %}
+                <input type="hidden" name="sanction_id" value="{{ current_sanction.id }}">
+                <button type="submit" class="button subtle">
+                    {% if is_currently_restricted %}提前解除处罚{% else %}取消待生效处罚{% endif %}
+                </button>
+            </form>
+        {% else %}
+            <p style="margin: 0;">当前没有生效中或待生效的诚信处罚。</p>
+        {% endif %}
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>{% if current_sanction %}编辑当前处罚{% else %}设置诚信处罚{% endif %}</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit">{% if current_sanction %}保存处罚设置{% else %}创建处罚{% endif %}</button>
+        </form>
+    </article>
+</section>
+{% endblock %}

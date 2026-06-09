@@ -88,6 +88,7 @@
             display: flex;
             flex-direction: column;
             gap: 16px;
+            min-height: 0;
         }
 
         .brand-row {
@@ -138,6 +139,88 @@
             font-weight: 600;
             letter-spacing: 0.02em;
             text-transform: uppercase;
+        }
+
+        .sidebar-sections {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 4px;
+            margin-right: -4px;
+            display: grid;
+            gap: 16px;
+        }
+
+        .sidebar-sections::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .sidebar-sections::-webkit-scrollbar-thumb {
+            background: rgba(161, 161, 170, 0.38);
+            border-radius: 999px;
+        }
+
+        .nav-accordion {
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.46);
+            border: 1px solid rgba(228, 228, 231, 0.82);
+            overflow: hidden;
+        }
+
+        .nav-accordion[open] {
+            background: rgba(255, 255, 255, 0.7);
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+
+        .nav-accordion-summary {
+            list-style: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .nav-accordion-summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .nav-accordion-summary:hover {
+            background: rgba(255, 255, 255, 0.64);
+        }
+
+        .nav-accordion-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            font-weight: 700;
+            font-size: 0.93rem;
+        }
+
+        .nav-accordion-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 999px;
+            background: #d4d4d8;
+            flex: none;
+        }
+
+        .nav-accordion-chevron {
+            color: #a1a1aa;
+            font-size: 0.8rem;
+            transition: transform 0.18s ease;
+            flex: none;
+        }
+
+        .nav-accordion[open] .nav-accordion-chevron {
+            transform: rotate(90deg);
+        }
+
+        .nav-accordion-body {
+            padding: 0 8px 8px;
         }
 
         .nav-list {
@@ -970,97 +1053,149 @@
                     <span class="version-pill">Prototype</span>
                 </div>
 
-                {% if request.user.role == 'member' %}
-                    <div>
-                        <div class="nav-group-title">队员端</div>
-                        <nav class="nav-list">
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-dashboard' %}active{% endif %}" href="{% url 'member-dashboard' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-event-list' or request.resolver_match.url_name == 'member-event-detail' or request.resolver_match.url_name == 'member-event-apply' %}active{% endif %}" href="{% url 'member-event-list' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>活动</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-star-center' %}active{% endif %}" href="{% url 'member-star-center' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>ACM Star</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-competition-ladder' or request.resolver_match.url_name == 'member-competition-profile-public' %}active{% endif %}" href="{% url 'member-competition-ladder' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>竞赛天梯</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-team-list' or request.resolver_match.url_name == 'member-team-create' or request.resolver_match.url_name == 'member-team-edit' %}active{% endif %}" href="{% url 'member-team-list' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>队伍管理</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-contest-submission-list' or request.resolver_match.url_name == 'member-contest-submission-apply' %}active{% endif %}" href="{% url 'member-contest-submission-list' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项申报</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-checkin-history' %}active{% endif %}" href="{% url 'member-checkin-history' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>活跃历史</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-profile' %}active{% endif %}" href="{% url 'member-profile' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>个人资料</span></span>
-                            </a>
-                        </nav>
-                    </div>
-                {% else %}
-                    <div>
-                        <div class="nav-group-title">管理端</div>
-                        <nav class="nav-list">
-                            <a class="nav-item {% if request.resolver_match.url_name == 'management-dashboard' %}active{% endif %}" href="{% url 'management-dashboard' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' %}active{% endif %}" href="{% url 'event-list-manage' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>活动管理</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'event-series-list-manage' or request.resolver_match.url_name == 'event-series-create' or request.resolver_match.url_name == 'event-series-edit' %}active{% endif %}" href="{% url 'event-series-list-manage' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>系列管理</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'management-star-analytics' %}active{% endif %}" href="{% url 'management-star-analytics' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 统计</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'contest-list-manage' or request.resolver_match.url_name == 'contest-create' or request.resolver_match.url_name == 'contest-detail-manage' or request.resolver_match.url_name == 'contest-edit' or request.resolver_match.url_name == 'contest-archive' or request.resolver_match.url_name == 'contest-publish' or request.resolver_match.url_name == 'contest-team-create' or request.resolver_match.url_name == 'contest-team-edit' or request.resolver_match.url_name == 'contest-result-create' or request.resolver_match.url_name == 'contest-result-edit' or request.resolver_match.url_name == 'contest-result-revoke' or request.resolver_match.url_name == 'contest-result-restore' %}active{% endif %}" href="{% url 'contest-list-manage' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>赛事管理</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'member-team-submission-list-manage' or request.resolver_match.url_name == 'member-team-submission-detail-manage' or request.resolver_match.url_name == 'member-team-submission-review' %}active{% endif %}" href="{% url 'member-team-submission-list-manage' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>队伍审核</span></span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'contest-submission-list-manage' or request.resolver_match.url_name == 'contest-submission-detail-manage' or request.resolver_match.url_name == 'contest-submission-review' %}active{% endif %}" href="{% url 'contest-submission-list-manage' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项审核</span></span>
-                            </a>
-                            {% if request.user.role == 'super_admin' %}
-                                <a class="nav-item {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' %}active{% endif %}" href="{% url 'admin-list-manage' %}">
-                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>管理员管理</span></span>
+                <div class="sidebar-sections">
+                    {% if request.user.role == 'member' %}
+                        <div>
+                            <div class="nav-group-title">队员端</div>
+                            <nav class="nav-list">
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-dashboard' %}active{% endif %}" href="{% url 'member-dashboard' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
                                 </a>
-                                <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
-                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>系统设置</span></span>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-event-list' or request.resolver_match.url_name == 'member-event-detail' or request.resolver_match.url_name == 'member-event-apply' %}active{% endif %}" href="{% url 'member-event-list' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>活动</span></span>
                                 </a>
-                                <a class="nav-item {% if request.resolver_match.url_name == 'audit-log-list' %}active{% endif %}" href="{% url 'audit-log-list' %}">
-                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>审计日志</span></span>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-star-center' %}active{% endif %}" href="{% url 'member-star-center' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>ACM Star</span></span>
                                 </a>
-                            {% endif %}
-                        </nav>
-                    </div>
-
-                    <div>
-                        <div class="nav-group-title">当前能力</div>
-                        <div class="nav-list">
-                            <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' %}active{% endif %}" href="{% url 'event-list-manage' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>二维码入口</span></span>
-                                <span class="nav-note">已接通</span>
-                            </a>
-                            <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
-                                <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 规则</span></span>
-                                <span class="nav-note">已接通</span>
-                            </a>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-competition-ladder' or request.resolver_match.url_name == 'member-competition-profile-public' %}active{% endif %}" href="{% url 'member-competition-ladder' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>竞赛天梯</span></span>
+                                </a>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-team-list' or request.resolver_match.url_name == 'member-team-create' or request.resolver_match.url_name == 'member-team-edit' %}active{% endif %}" href="{% url 'member-team-list' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>队伍管理</span></span>
+                                </a>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-contest-submission-list' or request.resolver_match.url_name == 'member-contest-submission-apply' %}active{% endif %}" href="{% url 'member-contest-submission-list' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项申报</span></span>
+                                </a>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-checkin-history' %}active{% endif %}" href="{% url 'member-checkin-history' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>活跃历史</span></span>
+                                </a>
+                                <a class="nav-item {% if request.resolver_match.url_name == 'member-profile' %}active{% endif %}" href="{% url 'member-profile' %}">
+                                    <span class="nav-item-label"><span class="nav-bullet"></span><span>个人资料</span></span>
+                                </a>
+                            </nav>
                         </div>
-                    </div>
-                {% endif %}
+                    {% else %}
+                        <div>
+                            <div class="nav-group-title">管理端</div>
 
-                <div>
-                    <div class="nav-group-title">账户</div>
-                    <nav class="nav-list">
-                        <a class="nav-item {% if request.resolver_match.url_name == 'password-change-request' or request.resolver_match.url_name == 'password-change-confirm' %}active{% endif %}" href="{% url 'password-change-request' %}">
-                            <span class="nav-item-label"><span class="nav-bullet"></span><span>修改密码</span></span>
-                        </a>
-                    </nav>
+                            <details class="nav-accordion" {% if request.resolver_match.url_name == 'management-dashboard' or request.resolver_match.url_name == 'management-star-analytics' %}open{% endif %}>
+                                <summary class="nav-accordion-summary">
+                                    <span class="nav-accordion-title"><span class="nav-accordion-dot"></span><span>总览与分析</span></span>
+                                    <span class="nav-accordion-chevron">›</span>
+                                </summary>
+                                <div class="nav-accordion-body">
+                                    <nav class="nav-list">
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'management-dashboard' %}active{% endif %}" href="{% url 'management-dashboard' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>主页</span></span>
+                                        </a>
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'management-star-analytics' %}active{% endif %}" href="{% url 'management-star-analytics' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 统计</span></span>
+                                        </a>
+                                    </nav>
+                                </div>
+                            </details>
+
+                            <details class="nav-accordion" {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' or request.resolver_match.url_name == 'event-series-list-manage' or request.resolver_match.url_name == 'event-series-create' or request.resolver_match.url_name == 'event-series-edit' or request.resolver_match.url_name == 'member-list-manage' or request.resolver_match.url_name == 'member-detail-manage' or request.resolver_match.url_name == 'member-integrity-sanction-revoke' %}open{% endif %}>
+                                <summary class="nav-accordion-summary">
+                                    <span class="nav-accordion-title"><span class="nav-accordion-dot"></span><span>活动与成员</span></span>
+                                    <span class="nav-accordion-chevron">›</span>
+                                </summary>
+                                <div class="nav-accordion-body">
+                                    <nav class="nav-list">
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' %}active{% endif %}" href="{% url 'event-list-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>活动管理</span></span>
+                                        </a>
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'event-series-list-manage' or request.resolver_match.url_name == 'event-series-create' or request.resolver_match.url_name == 'event-series-edit' %}active{% endif %}" href="{% url 'event-series-list-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>系列管理</span></span>
+                                        </a>
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'member-list-manage' or request.resolver_match.url_name == 'member-detail-manage' or request.resolver_match.url_name == 'member-integrity-sanction-revoke' %}active{% endif %}" href="{% url 'member-list-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>成员管理</span></span>
+                                        </a>
+                                    </nav>
+                                </div>
+                            </details>
+
+                            <details class="nav-accordion" {% if request.resolver_match.url_name == 'contest-list-manage' or request.resolver_match.url_name == 'contest-create' or request.resolver_match.url_name == 'contest-detail-manage' or request.resolver_match.url_name == 'contest-edit' or request.resolver_match.url_name == 'contest-archive' or request.resolver_match.url_name == 'contest-publish' or request.resolver_match.url_name == 'contest-team-create' or request.resolver_match.url_name == 'contest-team-edit' or request.resolver_match.url_name == 'contest-result-create' or request.resolver_match.url_name == 'contest-result-edit' or request.resolver_match.url_name == 'contest-result-revoke' or request.resolver_match.url_name == 'contest-result-restore' or request.resolver_match.url_name == 'member-team-submission-list-manage' or request.resolver_match.url_name == 'member-team-submission-detail-manage' or request.resolver_match.url_name == 'member-team-submission-review' or request.resolver_match.url_name == 'contest-submission-list-manage' or request.resolver_match.url_name == 'contest-submission-detail-manage' or request.resolver_match.url_name == 'contest-submission-review' %}open{% endif %}>
+                                <summary class="nav-accordion-summary">
+                                    <span class="nav-accordion-title"><span class="nav-accordion-dot"></span><span>竞赛与审核</span></span>
+                                    <span class="nav-accordion-chevron">›</span>
+                                </summary>
+                                <div class="nav-accordion-body">
+                                    <nav class="nav-list">
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'contest-list-manage' or request.resolver_match.url_name == 'contest-create' or request.resolver_match.url_name == 'contest-detail-manage' or request.resolver_match.url_name == 'contest-edit' or request.resolver_match.url_name == 'contest-archive' or request.resolver_match.url_name == 'contest-publish' or request.resolver_match.url_name == 'contest-team-create' or request.resolver_match.url_name == 'contest-team-edit' or request.resolver_match.url_name == 'contest-result-create' or request.resolver_match.url_name == 'contest-result-edit' or request.resolver_match.url_name == 'contest-result-revoke' or request.resolver_match.url_name == 'contest-result-restore' %}active{% endif %}" href="{% url 'contest-list-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>赛事管理</span></span>
+                                        </a>
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'member-team-submission-list-manage' or request.resolver_match.url_name == 'member-team-submission-detail-manage' or request.resolver_match.url_name == 'member-team-submission-review' %}active{% endif %}" href="{% url 'member-team-submission-list-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>队伍审核</span></span>
+                                        </a>
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'contest-submission-list-manage' or request.resolver_match.url_name == 'contest-submission-detail-manage' or request.resolver_match.url_name == 'contest-submission-review' %}active{% endif %}" href="{% url 'contest-submission-list-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项审核</span></span>
+                                        </a>
+                                    </nav>
+                                </div>
+                            </details>
+
+                            {% if request.user.role == 'super_admin' %}
+                                <details class="nav-accordion" {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' or request.resolver_match.url_name == 'system-settings-manage' or request.resolver_match.url_name == 'audit-log-list' %}open{% endif %}>
+                                    <summary class="nav-accordion-summary">
+                                        <span class="nav-accordion-title"><span class="nav-accordion-dot"></span><span>系统治理</span></span>
+                                        <span class="nav-accordion-chevron">›</span>
+                                    </summary>
+                                    <div class="nav-accordion-body">
+                                        <nav class="nav-list">
+                                            <a class="nav-item {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' %}active{% endif %}" href="{% url 'admin-list-manage' %}">
+                                                <span class="nav-item-label"><span class="nav-bullet"></span><span>管理员管理</span></span>
+                                            </a>
+                                            <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
+                                                <span class="nav-item-label"><span class="nav-bullet"></span><span>系统设置</span></span>
+                                            </a>
+                                            <a class="nav-item {% if request.resolver_match.url_name == 'audit-log-list' %}active{% endif %}" href="{% url 'audit-log-list' %}">
+                                                <span class="nav-item-label"><span class="nav-bullet"></span><span>审计日志</span></span>
+                                            </a>
+                                        </nav>
+                                    </div>
+                                </details>
+                            {% endif %}
+
+                            <details class="nav-accordion">
+                                <summary class="nav-accordion-summary">
+                                    <span class="nav-accordion-title"><span class="nav-accordion-dot"></span><span>当前能力</span></span>
+                                    <span class="nav-accordion-chevron">›</span>
+                                </summary>
+                                <div class="nav-accordion-body">
+                                    <div class="nav-list">
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'event-list-manage' or request.resolver_match.url_name == 'event-create' or request.resolver_match.url_name == 'event-edit' or request.resolver_match.url_name == 'event-detail-manage' or request.resolver_match.url_name == 'event-review' or request.resolver_match.url_name == 'event-delete' %}active{% endif %}" href="{% url 'event-list-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>二维码入口</span></span>
+                                            <span class="nav-note">已接通</span>
+                                        </a>
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 规则</span></span>
+                                            <span class="nav-note">已接通</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                    {% endif %}
+
+                    <div>
+                        <div class="nav-group-title">账户</div>
+                        <nav class="nav-list">
+                            <a class="nav-item {% if request.resolver_match.url_name == 'password-change-request' or request.resolver_match.url_name == 'password-change-confirm' %}active{% endif %}" href="{% url 'password-change-request' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>修改密码</span></span>
+                            </a>
+                        </nav>
+                    </div>
                 </div>
 
                 <div class="sidebar-footer">

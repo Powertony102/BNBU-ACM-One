@@ -14,7 +14,7 @@
 
     <div class="stats-row">
         <div class="stat-chip">
-            <strong style="color: {{ competition_snapshot.profile.primary_color }};">{{ competition_snapshot.level.label }}</strong>
+            <strong style="color: {{ competition_snapshot.display_color }};">{{ competition_snapshot.level.label }}</strong>
             <span>当前等级</span>
         </div>
         <div class="stat-chip">
@@ -38,6 +38,19 @@
         {% endif %}
     </div>
 </section>
+
+{% if integrity_sanction %}
+<section class="card" style="margin-bottom: 18px; border-color: rgba(139, 90, 43, 0.24);">
+    <div class="card-header">
+        <h3 style="color: #8b5a2b;">诚信状态公示</h3>
+        <span class="badge dim">{{ integrity_sanction.public_notice }}</span>
+    </div>
+    <p style="margin: 0;">该成员当前处于诚信处罚期。处罚有效期至 {{ integrity_sanction.ends_at|date:"Y-m-d H:i" }}，期间 ACM Star 保持熄灭，竞赛等级名称颜色按规则调整为棕色。</p>
+    {% if integrity_sanction.member_reason_visible %}
+        <p class="muted" style="margin: 10px 0 0;">对你本人可见的原因：{{ integrity_sanction.display_reason }}</p>
+    {% endif %}
+</section>
+{% endif %}
 
 <section class="grid">
     <article class="card">

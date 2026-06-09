@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import AdminProfile, AuditLog, CheckInRecord, EmailVerificationCode, Event, EventQRCode, MemberProfile, SystemSetting, User
+from .models import AdminProfile, AuditLog, CheckInRecord, EmailVerificationCode, Event, EventQRCode, MemberIntegritySanction, MemberProfile, SystemSetting, User
 
 
 @admin.register(User)
@@ -17,6 +17,13 @@ class UserAdmin(DjangoUserAdmin):
 class MemberProfileAdmin(admin.ModelAdmin):
     list_display = ('real_name', 'student_id', 'enrollment_year', 'major', 'status', 'user')
     search_fields = ('real_name', 'student_id', 'user__username')
+
+
+@admin.register(MemberIntegritySanction)
+class MemberIntegritySanctionAdmin(admin.ModelAdmin):
+    list_display = ('member', 'reason_type', 'starts_at', 'ends_at', 'revoked_at', 'created_by')
+    list_filter = ('reason_type', 'revoked_at')
+    search_fields = ('member__real_name', 'member__student_id', 'member_reason', 'internal_note')
 
 
 @admin.register(AdminProfile)

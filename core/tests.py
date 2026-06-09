@@ -12,6 +12,7 @@ from .competition import sync_event_series_completion, sync_member_competition_p
 from .forms import ContestTeamForm
 from .models import (
     AdminProfile,
+    AuditLog,
     CheckInRecord,
     Contest,
     ContestResult,
@@ -22,6 +23,7 @@ from .models import (
     EventQRCode,
     EventSeries,
     EventSeriesCompletion,
+    MemberIntegritySanction,
     MemberTeam,
     MemberTeamSubmission,
     MemberCompetitionProfile,
@@ -219,6 +221,174 @@ class ACMStarViewsTests(TestCase):
         self.client.login(username='member-star', password='ACM123456')
         response = self.client.get(reverse('management-star-analytics'))
         self.assertEqual(response.status_code, 403)
+
+    def test_integrity_sanction_extinguishes_member_star_and_shows_reason_to_self(self):
+        MemberIntegritySanction.objects.create(
+            member=self.member_profile,
+            reason_type=MemberIntegritySanction.ReasonType.SERIOUS_RULE_VIOLATION,
+            member_reason='活动中存在严重违规行为，处罚期内暂停展示星标。',
+            internal_note='管理员测试用处罚记录。',
+            starts_at=timezone.now() - timedelta(days=1),
+            ends_at=timezone.now() + timedelta(days=5),
+            created_by=self.admin_user,
+        )
+
+        self.client.login(username='member-star', password='ACM123456')
+        response = self.client.get(reverse('member-star-center'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['star_snapshot']['lit'])
+        self.assertContains(response, '诚信处罚期')
+        self.assertContains(response, '违反 ACM 准则')
+        self.assertContains(response, '活动中存在严重违规行为，处罚期内暂停展示星标。')
+
+    def test_public_competition_page_shows_generic_notice_only_to_other_members(self):
+        MemberIntegritySanction.objects.create(
+            member=self.member_profile,
+            reason_type=MemberIntegritySanction.ReasonType.CONTEST_NO_SHOW,
+            member_reason='报名后无故缺席最近比赛。',
+            internal_note='测试公开页文案边界。',
+            starts_at=timezone.now() - timedelta(days=1),
+            ends_at=timezone.now() + timedelta(days=3),
+            created_by=self.admin_user,
+        )
+        viewer = User.objects.create_user(
+            username='viewer-member',
+            password='ACM123456',
+            role=User.Roles.MEMBER,
+        )
+        MemberProfile.objects.create(
+            user=viewer,
+            real_name='旁观队员',
+            student_id='20269999',
+            major='Computer Science',
+            status=MemberProfile.Status.ACTIVE,
+        )
+
+        self.client.login(username='viewer-member', password='ACM123456')
+        response = self.client.get(reverse('member-competition-profile-public', args=[self.member_profile.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '违反 ACM 准则')
+        self.assertNotContains(response, '报名后无故缺席最近比赛。')
+        self.assertFalse(response.context['integrity_sanction']['member_reason_visible'])
+
+
+class MemberIntegrityManagementTests(TestCase):
+    def setUp(self):
+        self.member_user = User.objects.create_user(
+            username='integrity-member',
+            password='ACM123456',
+            role=User.Roles.MEMBER,
+        )
+        self.member_profile = MemberProfile.objects.create(
+            user=self.member_user,
+            real_name='治理队员',
+            student_id='20268888',
+            major='CST',
+            enrollment_year=2026,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        self.admin_user = User.objects.create_user(
+            username='integrity-admin',
+            password='AdminPassword2026!',
+            role=User.Roles.ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=self.admin_user,
+            display_name='治理管理员',
+            admin_level=AdminProfile.Level.ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+
+    def test_management_can_create_and_revoke_integrity_sanction(self):
+        self.client.login(username='integrity-admin', password='AdminPassword2026!')
+        create_response = self.client.post(
+            reverse('member-detail-manage', args=[self.member_profile.id]),
+            {
+                'reason_type': MemberIntegritySanction.ReasonType.CONTEST_NO_SHOW,
+                'member_reason': '报名后缺席最近比赛。',
+                'internal_note': '经核实未请假。',
+                'starts_at': (timezone.localtime(timezone.now()) - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'ends_at': (timezone.localtime(timezone.now()) + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M'),
+            },
+            follow=True,
+        )
+        self.assertEqual(create_response.status_code, 200)
+
+        sanction = MemberIntegritySanction.objects.get(member=self.member_profile)
+        self.assertEqual(sanction.member_reason, '报名后缺席最近比赛。')
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action='create_member_integrity_sanction',
+                target_id=sanction.id,
+            ).exists()
+        )
+
+        list_response = self.client.get(reverse('member-list-manage'))
+        self.assertContains(list_response, '治理队员')
+        self.assertContains(list_response, '处罚期')
+
+        revoke_response = self.client.post(
+            reverse('member-integrity-sanction-revoke', args=[self.member_profile.id]),
+            {'sanction_id': str(sanction.id)},
+            follow=True,
+        )
+        self.assertEqual(revoke_response.status_code, 200)
+
+        sanction.refresh_from_db()
+        self.assertIsNotNone(sanction.revoked_at)
+        self.assertEqual(sanction.revoked_by, self.admin_user)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action='revoke_member_integrity_sanction',
+                target_id=sanction.id,
+            ).exists()
+        )
+
+    def test_management_prefers_active_sanction_over_future_one(self):
+        active_sanction = MemberIntegritySanction.objects.create(
+            member=self.member_profile,
+            reason_type=MemberIntegritySanction.ReasonType.SERIOUS_RULE_VIOLATION,
+            member_reason='当前生效处罚',
+            starts_at=timezone.now() - timedelta(days=1),
+            ends_at=timezone.now() + timedelta(days=2),
+            created_by=self.admin_user,
+        )
+        future_sanction = MemberIntegritySanction.objects.create(
+            member=self.member_profile,
+            reason_type=MemberIntegritySanction.ReasonType.CONTEST_NO_SHOW,
+            member_reason='未来待生效处罚',
+            starts_at=timezone.now() + timedelta(days=5),
+            ends_at=timezone.now() + timedelta(days=10),
+            created_by=self.admin_user,
+        )
+
+        self.client.login(username='integrity-admin', password='AdminPassword2026!')
+        detail_response = self.client.get(reverse('member-detail-manage', args=[self.member_profile.id]))
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.context['current_sanction'].id, active_sanction.id)
+        self.assertTrue(detail_response.context['is_currently_restricted'])
+        self.assertContains(detail_response, '当前生效处罚')
+        self.assertNotContains(detail_response, '未来待生效处罚')
+
+        list_response = self.client.get(reverse('member-list-manage'), {'integrity': 'restricted'})
+        self.assertEqual(list_response.status_code, 200)
+        self.assertContains(list_response, '治理队员')
+
+        revoke_response = self.client.post(
+            reverse('member-integrity-sanction-revoke', args=[self.member_profile.id]),
+            {'sanction_id': str(active_sanction.id)},
+            follow=True,
+        )
+        self.assertEqual(revoke_response.status_code, 200)
+
+        active_sanction.refresh_from_db()
+        future_sanction.refresh_from_db()
+        self.assertIsNotNone(active_sanction.revoked_at)
+        self.assertIsNone(future_sanction.revoked_at)
 
 
 class MemberRegistrationTests(TestCase):

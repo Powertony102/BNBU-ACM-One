@@ -80,7 +80,7 @@
                     <div>
                         <div class="feed-item-title">
                             #{{ forloop.counter }}
-                            <a href="{% url 'member-competition-profile-public' entry.member.id %}" style="color: {{ entry.primary_color }}; margin-left: 8px; text-decoration: none;">
+                            <a href="{% url 'member-competition-profile-public' entry.member.id %}" style="color: {{ entry.display_color }}; margin-left: 8px; text-decoration: none;">
                                 {{ entry.member.real_name }}
                             </a>
                         </div>
@@ -93,6 +93,9 @@
                         <div class="feed-item-meta">
                             最高奖项：{{ entry.highest_award_label|default:"暂无已认证成绩" }}
                         </div>
+                        {% if entry.integrity_sanction %}
+                            <div class="feed-item-meta" style="color: #8b5a2b;">当前处于诚信处罚期</div>
+                        {% endif %}
                     </div>
                     <span class="badge {{ entry.level_meta.tone }}">{{ entry.level_meta.label }}</span>
                 </div>

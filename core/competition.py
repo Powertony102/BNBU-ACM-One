@@ -21,6 +21,8 @@ LEVEL_WEIGHT_MAP = {
     Contest.Level.INTERNAL: Decimal('0.80'),
 }
 
+INTEGRITY_RESTRICTED_COLOR = '#8b5a2b'
+
 AWARD_BONUS_MAP = {
     ContestResult.AwardType.GOLD: 120,
     ContestResult.AwardType.SILVER: 80,
@@ -97,6 +99,26 @@ def get_competition_level(rating):
         if rating >= level['min_rating']:
             selected = level
     return selected
+
+
+def build_integrity_sanction_snapshot(member, now=None):
+    sanction = member.get_active_integrity_sanction(now=now)
+    if sanction is None:
+        return None
+    return {
+        'id': sanction.id,
+        'reason_type': sanction.reason_type,
+        'reason_label': sanction.get_reason_type_display(),
+        'member_reason': sanction.member_reason,
+        'internal_note': sanction.internal_note,
+        'public_notice': sanction.public_notice,
+        'starts_at': sanction.starts_at,
+        'ends_at': sanction.ends_at,
+    }
+
+
+def get_competition_display_color(default_color, integrity_sanction=None):
+    return INTEGRITY_RESTRICTED_COLOR if integrity_sanction else default_color
 
 
 def get_level_weight(level, stored_weight=None):
@@ -260,12 +282,18 @@ def build_member_competition_snapshot(member):
     competition_profile = get_or_create_competition_profile(member)
     current_level = get_competition_level(competition_profile.current_rating)
     peak_level = get_competition_level(competition_profile.peak_rating)
+    integrity_sanction = build_integrity_sanction_snapshot(member)
     all_results = list(get_member_verified_results(member))
     recent_results = all_results[:5]
     return {
         'profile': competition_profile,
         'level': current_level,
         'peak_level': peak_level,
+        'integrity_sanction': integrity_sanction,
+        'display_color': get_competition_display_color(
+            competition_profile.primary_color,
+            integrity_sanction=integrity_sanction,
+        ),
         'recent_results': recent_results,
         'all_results': all_results,
     }

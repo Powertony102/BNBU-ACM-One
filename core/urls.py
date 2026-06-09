@@ -30,6 +30,13 @@ urlpatterns = [
     path('member/profile/', views.member_profile, name='member-profile'),
     path('management/dashboard/', views.management_dashboard, name='management-dashboard'),
     path('management/star/', views.star_analytics, name='management-star-analytics'),
+    path('management/members/', views.member_list_manage, name='member-list-manage'),
+    path('management/members/<int:member_id>/', views.member_detail_manage, name='member-detail-manage'),
+    path(
+        'management/members/<int:member_id>/integrity/revoke/',
+        views.member_integrity_sanction_revoke,
+        name='member-integrity-sanction-revoke',
+    ),
     path('management/contests/', views.contest_list_manage, name='contest-list-manage'),
     path('management/member-teams/submissions/', views.member_team_submission_list_manage, name='member-team-submission-list-manage'),
     path('management/member-teams/submissions/<int:submission_id>/', views.member_team_submission_detail_manage, name='member-team-submission-detail-manage'),

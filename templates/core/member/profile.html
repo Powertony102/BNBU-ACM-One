@@ -10,6 +10,19 @@
     <p>学号、角色和账号状态由管理员维护；学校邮箱、入学年份、专业代码和其他联系信息可以由你自己更新。</p>
 </section>
 
+{% if integrity_sanction %}
+<section class="card" style="margin-bottom: 18px; border-color: rgba(139, 90, 43, 0.24);">
+    <div class="card-header">
+        <h3 style="color: #8b5a2b;">诚信状态提示</h3>
+        <span class="badge dim">{{ integrity_sanction.public_notice }}</span>
+    </div>
+    <p style="margin: 0;">当前你正处于诚信处罚期，公开竞赛页会展示泛化说明，ACM Star 也会保持熄灭，直到 {{ integrity_sanction.ends_at|date:"Y-m-d H:i" }} 自动恢复。</p>
+    {% if integrity_sanction.member_reason_visible %}
+        <p class="muted" style="margin: 10px 0 0;">对你可见的原因：{{ integrity_sanction.display_reason }}</p>
+    {% endif %}
+</section>
+{% endif %}
+
 <section class="grid">
     <article class="card soft">
         <div class="card-header">
@@ -42,7 +55,7 @@
             <span class="badge {{ competition_snapshot.level.tone }}">{{ competition_snapshot.level.label }}</span>
         </div>
         <div class="stack" style="gap: 10px;">
-            <div><strong>当前等级：</strong><span class="muted" style="color: {{ competition_snapshot.profile.primary_color }};">{{ competition_snapshot.level.title }}</span></div>
+            <div><strong>当前等级：</strong><span class="muted" style="color: {{ competition_snapshot.display_color }};">{{ competition_snapshot.level.title }}</span></div>
             <div><strong>当前 Rating：</strong><span class="muted">{{ competition_snapshot.profile.current_rating }}</span></div>
             <div><strong>历史最高：</strong><span class="muted">{{ competition_snapshot.peak_level.label }} / {{ competition_snapshot.profile.peak_rating }}</span></div>
             <div><strong>最高奖项：</strong><span class="muted">{{ competition_snapshot.profile.highest_award_label|default:"暂无已认证成绩" }}</span></div>

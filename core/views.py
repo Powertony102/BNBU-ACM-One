@@ -22,8 +22,10 @@ from django.utils import timezone
 import qrcode
 
 from .competition import (
+    build_integrity_sanction_snapshot,
     build_competition_ladder_queryset,
     build_member_competition_snapshot,
+    get_competition_display_color,
     get_competition_level,
     sync_event_series_completion,
     sync_member_competition_profile,
@@ -43,6 +45,7 @@ from .forms import (
     EventSeriesForm,
     LoginForm,
     ManualCheckInForm,
+    MemberIntegritySanctionForm,
     MemberTeamSubmissionForm,
     MemberTeamSubmissionReviewForm,
     MemberProfileForm,
@@ -67,6 +70,7 @@ from .models import (
     MemberTeam,
     MemberTeamSubmission,
     MemberCompetitionProfile,
+    MemberIntegritySanction,
     MemberProfile,
     SystemSetting,
     User,
@@ -298,6 +302,95 @@ def get_star_level(recent_checkin_count):
     }
 
 
+def get_integrity_restricted_star_level():
+    return {
+        'slug': 'restricted',
+        'label': 'Restricted',
+        'title': '诚信处罚期',
+        'next_target': None,
+        'tone': 'dim',
+    }
+
+
+def build_integrity_sanction_snapshot_from_record(sanction):
+    if sanction is None:
+        return None
+    return {
+        'id': sanction.id,
+        'reason_type': sanction.reason_type,
+        'reason_label': sanction.get_reason_type_display(),
+        'member_reason': sanction.member_reason,
+        'internal_note': sanction.internal_note,
+        'public_notice': sanction.public_notice,
+        'starts_at': sanction.starts_at,
+        'ends_at': sanction.ends_at,
+    }
+
+
+def build_member_integrity_context_from_snapshot(profile, sanction_snapshot, viewer=None, now=None):
+    if sanction_snapshot is None:
+        return None
+    viewer_user_id = getattr(viewer, 'id', None)
+    sanction = dict(sanction_snapshot)
+    member_reason_visible = viewer_user_id == profile.user_id and bool(sanction_snapshot['member_reason'])
+    sanction['member_reason_visible'] = member_reason_visible
+    sanction['display_reason'] = sanction_snapshot['member_reason'] if member_reason_visible else ''
+    sanction['days_remaining'] = max(
+        0,
+        math.ceil((sanction_snapshot['ends_at'] - (now or timezone.now())).total_seconds() / 86400),
+    )
+    return sanction
+
+
+def build_member_integrity_context(profile, viewer=None, now=None):
+    sanction = build_integrity_sanction_snapshot(profile, now=now)
+    return build_member_integrity_context_from_snapshot(profile, sanction, viewer=viewer, now=now)
+
+
+def choose_member_integrity_sanction(existing, candidate, now):
+    if existing is None:
+        return candidate
+    existing_active = existing.is_active_at(now)
+    candidate_active = candidate.is_active_at(now)
+    if candidate_active and not existing_active:
+        return candidate
+    if existing_active and not candidate_active:
+        return existing
+    if candidate_active and existing_active:
+        if (candidate.starts_at, candidate.id) > (existing.starts_at, existing.id):
+            return candidate
+        return existing
+    if (candidate.starts_at, candidate.id) < (existing.starts_at, existing.id):
+        return candidate
+    return existing
+
+
+def build_non_expired_integrity_sanction_map(member_ids, now=None):
+    now = now or timezone.now()
+    sanction_map = {}
+    sanctions = (
+        MemberIntegritySanction.objects.filter(
+            member_id__in=member_ids,
+            revoked_at__isnull=True,
+            ends_at__gte=now,
+        )
+        .select_related('created_by', 'revoked_by')
+        .order_by('member_id', 'starts_at', 'id')
+    )
+    for sanction in sanctions:
+        sanction_map[sanction.member_id] = choose_member_integrity_sanction(
+            sanction_map.get(sanction.member_id),
+            sanction,
+            now,
+        )
+    return sanction_map
+
+
+def get_member_current_or_upcoming_integrity_sanction(member, now=None):
+    now = now or timezone.now()
+    return build_non_expired_integrity_sanction_map([member.id], now=now).get(member.id)
+
+
 def get_contest_activity_datetime(contest_date):
     return timezone.make_aware(
         datetime.combine(contest_date, time(hour=12)),
@@ -370,6 +463,7 @@ def build_member_star_snapshot(profile, window_days=None, window_start=None):
     if window_days is None or window_start is None:
         window_days, window_start = get_star_window()
     now = timezone.now()
+    integrity_sanction = build_member_integrity_context(profile, now=now)
     recent_activities = build_member_star_activity_records(profile, window_start)
     recent_activity_count = len(recent_activities)
     level = get_star_level(recent_activity_count)
@@ -392,8 +486,15 @@ def build_member_star_snapshot(profile, window_days=None, window_start=None):
         )
     else:
         next_milestone = '你已经处于最高等级，继续保持近期参与节奏即可。'
+    lit = recent_activity_count > 0
+    if integrity_sanction:
+        level = get_integrity_restricted_star_level()
+        lit = False
+        expires_at = integrity_sanction['ends_at']
+        days_remaining = integrity_sanction['days_remaining']
+        next_milestone = '当前因诚信处罚处于熄灭状态，处罚到期或提前解除后将自动恢复 ACM Star 计算。'
     return {
-        'lit': recent_activity_count > 0,
+        'lit': lit,
         'recent_activity_count': recent_activity_count,
         'recent_checkin_count': recent_activity_count,
         'recent_activities': recent_activities[:5],
@@ -408,6 +509,7 @@ def build_member_star_snapshot(profile, window_days=None, window_start=None):
         'level': level,
         'progress_percent': min(recent_activity_count / 4, 1) * 100,
         'next_milestone': next_milestone,
+        'integrity_sanction': integrity_sanction,
     }
 
 
@@ -973,6 +1075,7 @@ def member_dashboard(request):
         'profile': profile,
         'star_lit': star_snapshot['lit'],
         'star_snapshot': star_snapshot,
+        'integrity_sanction': build_member_integrity_context(profile, viewer=request.user),
         'window_days': window_days,
         'recent_activities': star_snapshot['recent_activities'],
         'upcoming_events': recent_events,
@@ -1124,6 +1227,7 @@ def member_profile(request):
             'form': form,
             'profile': profile,
             'competition_snapshot': build_member_competition_snapshot(profile),
+            'integrity_sanction': build_member_integrity_context(profile, viewer=request.user),
         },
     )
 
@@ -1139,6 +1243,7 @@ def member_competition_profile_public(request, member_id):
         {
             'profile': profile,
             'competition_snapshot': build_member_competition_snapshot(profile),
+            'integrity_sanction': build_member_integrity_context(profile, viewer=request.user),
             'is_self': profile.user_id == request.user.id,
         },
     )
@@ -1355,6 +1460,7 @@ def member_star_center(request):
             'profile': profile,
             'window_days': window_days,
             'star_snapshot': star_snapshot,
+            'integrity_sanction': build_member_integrity_context(profile, viewer=request.user),
         },
     )
 
@@ -1383,8 +1489,20 @@ def member_competition_ladder(request):
         )
 
     ladder = list(ladder_queryset)
+    now = timezone.now()
+    sanction_map = build_non_expired_integrity_sanction_map([entry.member_id for entry in ladder], now=now)
     for entry in ladder:
         entry.level_meta = get_competition_level(entry.current_rating)
+        sanction = sanction_map.get(entry.member_id)
+        if sanction and not sanction.is_active_at(now):
+            sanction = None
+        entry.integrity_sanction = build_member_integrity_context_from_snapshot(
+            entry.member,
+            build_integrity_sanction_snapshot_from_record(sanction),
+            viewer=request.user,
+            now=now,
+        )
+        entry.display_color = get_competition_display_color(entry.primary_color, entry.integrity_sanction)
     available_majors = [
         value
         for value in MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
@@ -1428,8 +1546,19 @@ def management_dashboard(request):
     star_holders = get_star_holders_queryset(window_start)
     lit_members = len(star_holders)
     top_competition_members = list(build_competition_ladder_queryset()[:3])
+    sanction_map = build_non_expired_integrity_sanction_map([entry.member_id for entry in top_competition_members], now=now)
     for entry in top_competition_members:
         entry.level_meta = get_competition_level(entry.current_rating)
+        sanction = sanction_map.get(entry.member_id)
+        if sanction and not sanction.is_active_at(now):
+            sanction = None
+        entry.integrity_sanction = build_member_integrity_context_from_snapshot(
+            entry.member,
+            build_integrity_sanction_snapshot_from_record(sanction),
+            viewer=request.user,
+            now=now,
+        )
+        entry.display_color = get_competition_display_color(entry.primary_color, entry.integrity_sanction)
     context = {
         'recent_event_count': Event.objects.filter(start_time__gte=now).count(),
         'contest_total': Contest.objects.count(),
@@ -1492,6 +1621,135 @@ def star_analytics(request):
         'class_breakdown': class_breakdown,
     }
     return render(request, 'core/management/star_analytics.html', context)
+
+
+@login_required
+def member_list_manage(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    query = request.GET.get('q', '').strip()
+    selected_status = request.GET.get('status', '').strip()
+    selected_integrity = request.GET.get('integrity', '').strip()
+
+    members = MemberProfile.objects.select_related('user', 'competition_profile').order_by('real_name', 'student_id')
+    if query:
+        members = members.filter(
+            Q(real_name__icontains=query)
+            | Q(student_id__icontains=query)
+            | Q(major__icontains=query)
+            | Q(user__username__icontains=query)
+        )
+    if selected_status:
+        members = members.filter(status=selected_status)
+
+    members = list(members)
+    now = timezone.now()
+    sanction_map = build_non_expired_integrity_sanction_map([member.id for member in members], now=now)
+    filtered_members = []
+    restricted_total = 0
+    for member in members:
+        member.active_integrity_sanction = None
+        sanction = sanction_map.get(member.id)
+        if sanction and sanction.is_active_at(now):
+            member.active_integrity_sanction = sanction
+            restricted_total += 1
+        if selected_integrity == 'restricted' and member.active_integrity_sanction is None:
+            continue
+        if selected_integrity == 'normal' and member.active_integrity_sanction is not None:
+            continue
+        filtered_members.append(member)
+
+    context = {
+        'members': filtered_members,
+        'query': query,
+        'selected_status': selected_status,
+        'selected_integrity': selected_integrity,
+        'active_total': sum(1 for member in filtered_members if member.status == MemberProfile.Status.ACTIVE),
+        'restricted_total': restricted_total,
+        'member_total': len(filtered_members),
+    }
+    return render(request, 'core/management/member_list.html', context)
+
+
+@login_required
+def member_detail_manage(request, member_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    member = get_object_or_404(MemberProfile.objects.select_related('user'), pk=member_id)
+    now = timezone.now()
+    current_sanction = get_member_current_or_upcoming_integrity_sanction(member, now=now)
+    form = MemberIntegritySanctionForm(request.POST or None, instance=current_sanction)
+    if request.method == 'POST' and form.is_valid():
+        overlap_query = MemberIntegritySanction.objects.filter(
+            member=member,
+            revoked_at__isnull=True,
+            starts_at__lt=form.cleaned_data['ends_at'],
+            ends_at__gt=form.cleaned_data['starts_at'],
+        )
+        if current_sanction is not None:
+            overlap_query = overlap_query.exclude(pk=current_sanction.pk)
+        if overlap_query.exists():
+            form.add_error(None, '该成员已有时间重叠的诚信处罚，请先调整或解除现有处罚。')
+        else:
+            sanction = form.save(commit=False)
+            created = sanction.pk is None
+            sanction.member = member
+            if created:
+                sanction.created_by = request.user
+            sanction.save()
+            log_action(
+                request.user,
+                'create_member_integrity_sanction' if created else 'update_member_integrity_sanction',
+                'MemberIntegritySanction',
+                sanction.id,
+                (
+                    f'member={member.student_id};reason={sanction.reason_type};'
+                    f'starts_at={sanction.starts_at.isoformat()};ends_at={sanction.ends_at.isoformat()}'
+                ),
+            )
+            messages.success(request, '诚信处罚设置已保存。')
+            return redirect('member-detail-manage', member_id=member.id)
+
+    context = {
+        'member': member,
+        'form': form,
+        'current_sanction': current_sanction,
+        'competition_snapshot': build_member_competition_snapshot(member),
+        'star_snapshot': build_member_star_snapshot(member),
+        'is_currently_restricted': current_sanction.is_active_at(now) if current_sanction else False,
+    }
+    return render(request, 'core/management/member_detail.html', context)
+
+
+@login_required
+def member_integrity_sanction_revoke(request, member_id):
+    if not require_management(request.user) or request.method != 'POST':
+        return HttpResponseForbidden('无权操作。')
+    member = get_object_or_404(MemberProfile, pk=member_id)
+    sanction_id = request.POST.get('sanction_id')
+    sanction = get_object_or_404(
+        MemberIntegritySanction.objects.filter(
+            member=member,
+            revoked_at__isnull=True,
+            ends_at__gte=timezone.now(),
+        ),
+        pk=sanction_id,
+    ) if sanction_id else None
+    if sanction is None:
+        messages.warning(request, '当前没有可解除的诚信处罚。')
+        return redirect('member-detail-manage', member_id=member.id)
+    sanction.revoked_by = request.user
+    sanction.revoked_at = timezone.now()
+    sanction.save(update_fields=['revoked_by', 'revoked_at', 'updated_at'])
+    log_action(
+        request.user,
+        'revoke_member_integrity_sanction',
+        'MemberIntegritySanction',
+        sanction.id,
+        f'member={member.student_id}',
+    )
+    messages.success(request, '诚信处罚已提前解除。')
+    return redirect('member-detail-manage', member_id=member.id)
 
 
 @login_required

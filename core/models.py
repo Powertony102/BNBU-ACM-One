@@ -83,6 +83,22 @@ class MemberProfile(models.Model):
     def __str__(self):
         return f'{self.real_name} ({self.student_id})'
 
+    def get_active_integrity_sanction(self, now=None):
+        now = now or timezone.now()
+        return (
+            self.integrity_sanctions.filter(
+                starts_at__lte=now,
+                ends_at__gte=now,
+                revoked_at__isnull=True,
+            )
+            .select_related('created_by', 'revoked_by')
+            .order_by('-starts_at', '-id')
+            .first()
+        )
+
+    def has_active_integrity_sanction(self, now=None):
+        return self.get_active_integrity_sanction(now=now) is not None
+
 
 class AdminProfile(models.Model):
     class Level(models.TextChoices):
@@ -446,6 +462,57 @@ class MemberCompetitionProfile(models.Model):
 
     def __str__(self):
         return f'{self.member.real_name} · {self.current_rating}'
+
+
+class MemberIntegritySanction(models.Model):
+    class ReasonType(models.TextChoices):
+        CONTEST_NO_SHOW = 'contest_no_show', '报名后缺席比赛'
+        SERIOUS_RULE_VIOLATION = 'serious_rule_violation', '活动中严重违反规则'
+        OTHER = 'other', '其他'
+
+    member = models.ForeignKey(
+        MemberProfile,
+        on_delete=models.CASCADE,
+        related_name='integrity_sanctions',
+    )
+    reason_type = models.CharField(max_length=40, choices=ReasonType.choices, default=ReasonType.OTHER)
+    member_reason = models.TextField(blank=True)
+    internal_note = models.TextField(blank=True)
+    starts_at = models.DateTimeField(default=timezone.now)
+    ends_at = models.DateTimeField()
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='created_integrity_sanctions',
+    )
+    revoked_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='revoked_integrity_sanctions',
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-starts_at', '-id']
+
+    def __str__(self):
+        return f'{self.member.real_name} · {self.get_reason_type_display()}'
+
+    def clean(self):
+        if self.ends_at and self.starts_at and self.ends_at <= self.starts_at:
+            raise ValidationError({'ends_at': '处罚截止时间必须晚于生效时间。'})
+
+    @property
+    def public_notice(self):
+        return '违反 ACM 准则'
+
+    def is_active_at(self, moment=None):
+        moment = moment or timezone.now()
+        return self.revoked_at is None and self.starts_at <= moment <= self.ends_at
 
 
 class MemberTeam(models.Model):

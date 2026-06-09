@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}成员管理 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}成员管理{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">查看成员状态与诚信处罚情况</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>成员管理</h2>
+    <p>这里用于查看队员资料、当前竞赛档案，以及是否处于诚信处罚期。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ member_total }}</strong>
+            <span>当前列表成员</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ active_total }}</strong>
+            <span>启用成员</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ restricted_total }}</strong>
+            <span>处罚期成员</span>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'management-dashboard' %}">返回管理首页</a>
+        <a class="quick-link" href="{% url 'management-star-analytics' %}">查看 Star 统计</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>筛选条件</h3>
+        </div>
+        <form method="get">
+            <p>
+                <label for="id_q">搜索</label>
+                <input id="id_q" type="text" name="q" value="{{ query }}" placeholder="姓名 / 学号 / 用户名 / 专业">
+            </p>
+            <p>
+                <label for="id_status">成员状态</label>
+                <select id="id_status" name="status">
+                    <option value="">全部状态</option>
+                    <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if selected_status == "inactive" %}selected{% endif %}>Inactive</option>
+                </select>
+            </p>
+            <p>
+                <label for="id_integrity">诚信状态</label>
+                <select id="id_integrity" name="integrity">
+                    <option value="">全部</option>
+                    <option value="restricted" {% if selected_integrity == "restricted" %}selected{% endif %}>处罚期中</option>
+                    <option value="normal" {% if selected_integrity == "normal" %}selected{% endif %}>正常</option>
+                </select>
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">应用筛选</button>
+                <a class="quick-link" href="{% url 'member-list-manage' %}">重置</a>
+            </div>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>成员列表</h3>
+            <span class="pill">{{ member_total }} 人</span>
+        </div>
+        <div class="feed-list">
+            {% for member in members %}
+                <a class="feed-item" href="{% url 'member-detail-manage' member.id %}">
+                    <div>
+                        <div class="feed-item-title">{{ member.real_name }}</div>
+                        <div class="feed-item-meta">{{ member.student_id }} · {{ member.user.username }}</div>
+                        <div class="feed-item-meta">{{ member.major|default:"未填写专业" }}{% if member.enrollment_year %} · {{ member.enrollment_year }} 级{% endif %}</div>
+                        {% if member.active_integrity_sanction %}
+                            <div class="feed-item-meta" style="color: #8b5a2b;">
+                                {{ member.active_integrity_sanction.public_notice }} · 至 {{ member.active_integrity_sanction.ends_at|date:"Y-m-d H:i" }}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <span class="badge {% if member.active_integrity_sanction %}dim{% elif member.status == 'active' %}live{% else %}warn{% endif %}">
+                        {% if member.active_integrity_sanction %}处罚期{% else %}{{ member.get_status_display }}{% endif %}
+                    </span>
+                </a>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无成员</div>
+                        <div class="feed-item-meta">当前筛选条件下没有可展示的成员。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

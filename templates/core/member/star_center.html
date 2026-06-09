@@ -26,6 +26,19 @@
     </div>
 </section>
 
+{% if integrity_sanction %}
+<section class="card" style="margin-bottom: 18px; border-color: rgba(139, 90, 43, 0.24);">
+    <div class="card-header">
+        <h3 style="color: #8b5a2b;">诚信处罚期</h3>
+        <span class="badge dim">{{ integrity_sanction.public_notice }}</span>
+    </div>
+    <p style="margin: 0;">当前 ACM Star 已被后台熄灭，系统会在 {{ integrity_sanction.ends_at|date:"Y-m-d H:i" }} 自动恢复原有规则计算。</p>
+    {% if integrity_sanction.member_reason_visible %}
+        <p class="muted" style="margin: 10px 0 0;">对你可见的原因：{{ integrity_sanction.display_reason }}</p>
+    {% endif %}
+</section>
+{% endif %}
+
 <section class="grid">
     <article class="card star-status-card" style="grid-column: span 2;">
         <div class="star-hero">

@@ -13,6 +13,7 @@ from .models import (
     AdminProfile,
     CheckInRecord,
     Contest,
+    MemberIntegritySanction,
     ContestResult,
     ContestSubmission,
     ContestTeam,
@@ -668,6 +669,46 @@ class AdminUpdateForm(forms.Form):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
         self.fields['email'].widget.attrs['autocomplete'] = 'email'
+
+
+class MemberIntegritySanctionForm(forms.ModelForm):
+    starts_at = forms.DateTimeField(
+        label='生效时间',
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
+    )
+    ends_at = forms.DateTimeField(
+        label='截止时间',
+        input_formats=[DATETIME_LOCAL_FORMAT],
+        widget=forms.DateTimeInput(format=DATETIME_LOCAL_FORMAT, attrs={'type': 'datetime-local'}),
+    )
+
+    class Meta:
+        model = MemberIntegritySanction
+        fields = ['reason_type', 'member_reason', 'internal_note', 'starts_at', 'ends_at']
+        labels = {
+            'reason_type': '处罚原因',
+            'member_reason': '对成员可见原因',
+            'internal_note': '内部备注',
+        }
+        widgets = {
+            'member_reason': forms.Textarea(attrs={'rows': 3}),
+            'internal_note': forms.Textarea(attrs={'rows': 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['member_reason'].help_text = '仅被处罚成员本人可见；公开页只会显示“违反 ACM 准则”。'
+        self.fields['internal_note'].help_text = '仅管理员可见，用于记录证据、背景或处理说明。'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        starts_at = cleaned_data.get('starts_at')
+        ends_at = cleaned_data.get('ends_at')
+        if starts_at and ends_at and ends_at <= starts_at:
+            self.add_error('ends_at', '处罚截止时间必须晚于生效时间。')
+        return cleaned_data
 
 
 class ContestForm(forms.ModelForm):
