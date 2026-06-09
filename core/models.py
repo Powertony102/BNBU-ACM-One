@@ -581,7 +581,7 @@ class ContestSubmission(models.Model):
         on_delete=models.SET_NULL,
         related_name='contest_submissions',
     )
-    team_name = models.CharField(max_length=200)
+    team_name = models.CharField(max_length=200, blank=True)
     team_members = models.ManyToManyField(MemberProfile, related_name='contest_submissions', blank=True)
     external_teammates = models.CharField(max_length=255, blank=True)
     award_type = models.CharField(max_length=20, choices=ContestResult.AwardType.choices, default=ContestResult.AwardType.PARTICIPATION)

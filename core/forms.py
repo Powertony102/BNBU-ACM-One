@@ -1007,8 +1007,7 @@ class ContestSubmissionForm(forms.ModelForm):
             cleaned_data['team_name'] = linked_member_team.name
             cleaned_data['team_members'] = team_members
             cleaned_data['external_teammates'] = ''
-        elif not cleaned_data.get('team_name', '').strip():
-            self.add_error('team_name', '未选择队伍时，请填写队伍名称。')
+
         return cleaned_data
 
 
