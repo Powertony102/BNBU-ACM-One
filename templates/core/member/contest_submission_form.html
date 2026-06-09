@@ -7,7 +7,10 @@
 {% block content %}
 <section class="page-hero">
     <h2>{{ page_title }}</h2>
-    <p>请尽量完整填写赛事、队伍和获奖信息。管理员审核时可以修改内容，并决定是否纳入正式竞赛档案。</p>
+    <p>请尽量完整填写赛事、队伍和获奖信息。你也可以额外选择一个已审核通过的三人队伍作为关联信息；这不会改变原有申报流程，管理员仍会按表单内容审核。</p>
+    <div class="quick-links" style="margin-top: 16px;">
+        <a class="quick-link" href="{% url 'member-team-list' %}">前往队伍管理</a>
+    </div>
 </section>
 
 <section class="grid">

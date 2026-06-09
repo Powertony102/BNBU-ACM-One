@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .competition import sync_member_competition_profile
+from .competition import sync_event_series_completion, sync_member_competition_profile
 from .forms import ContestTeamForm
 from .models import (
     AdminProfile,
@@ -20,6 +20,10 @@ from .models import (
     EmailVerificationCode,
     Event,
     EventQRCode,
+    EventSeries,
+    EventSeriesCompletion,
+    MemberTeam,
+    MemberTeamSubmission,
     MemberCompetitionProfile,
     MemberProfile,
     User,
@@ -411,6 +415,17 @@ class EventApplicationWorkflowTests(TestCase):
             admin_level=AdminProfile.Level.ADMIN,
             status=AdminProfile.Status.ACTIVE,
         )
+        self.event_series = EventSeries.objects.create(
+            title='春季训练营',
+            description='用于测试系列归属。',
+            series_type=EventSeries.SeriesType.TRAINING,
+            status=EventSeries.Status.PUBLISHED,
+            expected_event_count=10,
+            required_checkins_for_rating=8,
+            rating_enabled=True,
+            rating_points=120,
+            created_by=self.admin_user,
+        )
         self.application_payload = {
             'title': '队员专题分享',
             'event_type': Event.EventType.SHARING,
@@ -510,7 +525,7 @@ class EventApplicationWorkflowTests(TestCase):
         qr_response = self.client.post(reverse('event-generate-qr', args=[event.id]), follow=True)
         self.assertRedirects(qr_response, reverse('event-detail-manage', args=[event.id]))
         event.refresh_from_db()
-        self.assertEqual(event.qr_codes.count(), 1)
+        self.assertTrue(event.qr_codes.filter(is_active=True).exists())
 
         edit_response = self.client.get(reverse('event-edit', args=[event.id]))
         self.assertEqual(edit_response.status_code, 403)
@@ -625,6 +640,8 @@ class EventApplicationWorkflowTests(TestCase):
                 'event_type': Event.EventType.TRAINING,
                 'description': '管理员创建并指定成员代管。',
                 'location': 'Lab 501',
+                'series': str(self.event_series.id),
+                'series_order': '2',
                 'start_time': (timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M'),
                 'end_time': (timezone.now() + timedelta(days=2, hours=2)).strftime('%Y-%m-%dT%H:%M'),
                 'checkin_start_time': (timezone.now() + timedelta(days=2, minutes=-10)).strftime('%Y-%m-%dT%H:%M'),
@@ -641,10 +658,13 @@ class EventApplicationWorkflowTests(TestCase):
             [self.member_user, self.other_member_user],
             transform=lambda user: user,
         )
+        self.assertEqual(event.series, self.event_series)
+        self.assertEqual(event.series_order, 2)
         self.assertEqual(event.review_status, Event.ReviewStatus.APPROVED)
         self.assertContains(response, '签到管理员')
         self.assertContains(response, '申请队员')
         self.assertContains(response, '普通队员')
+        self.assertContains(response, '春季训练营')
 
         self.client.logout()
         self.client.login(username='2430026002', password='MemberPassword2026!')
@@ -654,7 +674,7 @@ class EventApplicationWorkflowTests(TestCase):
         qr_response = self.client.post(reverse('event-generate-qr', args=[event.id]), follow=True)
         self.assertRedirects(qr_response, reverse('event-detail-manage', args=[event.id]))
         event.refresh_from_db()
-        self.assertEqual(event.qr_codes.count(), 1)
+        self.assertTrue(event.qr_codes.filter(is_active=True).exists())
 
         edit_response = self.client.get(reverse('event-edit', args=[event.id]))
         self.assertEqual(edit_response.status_code, 403)
@@ -703,6 +723,27 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertContains(response, '签到管理员最多只能指定 5 名。')
         self.assertFalse(Event.objects.filter(title='超限管理员活动').exists())
 
+    def test_event_form_requires_series_before_series_order(self):
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('event-create'),
+            {
+                'title': '缺少系列的活动',
+                'event_type': Event.EventType.TRAINING,
+                'description': '测试系列校验。',
+                'location': 'Lab 602',
+                'series_order': '3',
+                'start_time': (timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M'),
+                'end_time': (timezone.now() + timedelta(days=2, hours=2)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_start_time': (timezone.now() + timedelta(days=2, minutes=-10)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_end_time': (timezone.now() + timedelta(days=2, hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'status': Event.Status.PUBLISHED,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '填写系列内序号前，请先选择所属系列。')
+        self.assertFalse(Event.objects.filter(title='缺少系列的活动').exists())
+
     def test_admin_can_soft_delete_existing_event(self):
         event = Event.objects.create(
             title='待删除活动',
@@ -740,7 +781,7 @@ class EventApplicationWorkflowTests(TestCase):
         self.client.login(username='admin-review', password='AdminPassword2026!')
         self.client.post(reverse('event-generate-qr', args=[event.id]), follow=True)
 
-        first_qr = EventQRCode.objects.get(event=event, is_active=True)
+        first_qr = EventQRCode.objects.filter(event=event, is_active=True).order_by('created_at').first()
         EventQRCode.objects.filter(pk=first_qr.pk).update(
             created_at=timezone.now() - timedelta(seconds=11),
         )
@@ -755,7 +796,7 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertFalse(first_qr.is_active)
         self.assertIsNotNone(first_qr.deactivated_at)
 
-        current_qr = EventQRCode.objects.get(event=event, is_active=True)
+        current_qr = EventQRCode.objects.filter(event=event, is_active=True).order_by('-created_at').first()
         self.assertNotEqual(first_qr.token, current_qr.token)
         self.assertEqual(payload['entry_url'], current_qr.url)
 
@@ -861,6 +902,37 @@ class ContestRatingTests(TestCase):
             leader=cls.member_profile,
         )
         cls.team.members.add(cls.member_profile)
+        cls.training_series = EventSeries.objects.create(
+            title='队内十次训练',
+            description='用于测试系列签到计分。',
+            series_type=EventSeries.SeriesType.TRAINING,
+            status=EventSeries.Status.PUBLISHED,
+            expected_event_count=10,
+            required_checkins_for_rating=2,
+            rating_enabled=True,
+            rating_points=60,
+            created_by=cls.admin_user,
+        )
+
+    def create_series_event(self, title, days_offset):
+        base_time = timezone.now() - timedelta(days=days_offset)
+        return Event.objects.create(
+            title=title,
+            event_type=Event.EventType.TRAINING,
+            description='系列活动测试。',
+            location='Lab 701',
+            series=self.training_series,
+            start_time=base_time,
+            end_time=base_time + timedelta(hours=2),
+            checkin_start_time=base_time - timedelta(minutes=15),
+            checkin_end_time=base_time + timedelta(hours=1),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=base_time - timedelta(hours=1),
+            created_by=self.admin_user,
+            published_at=base_time - timedelta(hours=1),
+        )
 
     def test_sync_member_competition_profile_uses_verified_results(self):
         result = ContestResult.objects.create(
@@ -881,6 +953,44 @@ class ContestRatingTests(TestCase):
         self.assertEqual(competition_profile.highest_award_label, '校赛银奖')
         result.refresh_from_db()
         self.assertEqual(result.rating_delta, 100)
+
+    def test_series_completion_contributes_to_rating_after_threshold(self):
+        first_event = self.create_series_event('训练 1', 3)
+        second_event = self.create_series_event('训练 2', 1)
+        CheckInRecord.objects.create(
+            member=self.member_profile,
+            event=first_event,
+            checkin_time=timezone.now() - timedelta(days=3),
+            checkin_method=CheckInRecord.Method.WEB,
+            status=CheckInRecord.Status.VALID,
+            created_by=self.member_user,
+        )
+        sync_event_series_completion(self.member_profile, self.training_series)
+        profile = sync_member_competition_profile(self.member_profile)
+        self.assertEqual(profile.current_rating, 0)
+
+        CheckInRecord.objects.create(
+            member=self.member_profile,
+            event=second_event,
+            checkin_time=timezone.now() - timedelta(days=1),
+            checkin_method=CheckInRecord.Method.QR,
+            status=CheckInRecord.Status.VALID,
+            created_by=self.member_user,
+        )
+        completion = sync_event_series_completion(self.member_profile, self.training_series)
+        profile = sync_member_competition_profile(self.member_profile)
+
+        self.assertTrue(completion.is_completed_for_rating)
+        self.assertEqual(completion.valid_checkin_count, 2)
+        self.assertEqual(completion.rating_delta, 60)
+        self.assertEqual(profile.current_rating, 60)
+        self.assertTrue(
+            EventSeriesCompletion.objects.filter(
+                member=self.member_profile,
+                series=self.training_series,
+                is_completed_for_rating=True,
+            ).exists()
+        )
 
     def test_management_and_member_pages_show_competition_modules(self):
         result = ContestResult.objects.create(
@@ -1164,6 +1274,187 @@ class ContestRatingTests(TestCase):
 
         profile = MemberCompetitionProfile.objects.get(member=self.member_profile)
         self.assertGreater(profile.current_rating, 0)
+
+    def test_member_team_create_submission_can_be_approved(self):
+        teammate_user = User.objects.create_user(
+            username='contest-member-4',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        teammate_profile = MemberProfile.objects.create(
+            user=teammate_user,
+            real_name='队友四号',
+            student_id='2430026444',
+            email='u430026444@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        third_user = User.objects.create_user(
+            username='contest-member-5',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        third_profile = MemberProfile.objects.create(
+            user=third_user,
+            real_name='队友五号',
+            student_id='2430026555',
+            email='u430026555@mail.bnbu.edu.cn',
+            major='DS',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        create_response = self.client.post(
+            reverse('member-team-create'),
+            {
+                'team_name': 'BNBU Aurora',
+                'members': [self.member_profile.id, teammate_profile.id, third_profile.id],
+                'captain': self.member_profile.id,
+            },
+            follow=True,
+        )
+        self.assertEqual(create_response.status_code, 200)
+
+        submission = MemberTeamSubmission.objects.get(applicant=self.member_user, team_name='BNBU Aurora')
+        self.assertEqual(submission.review_status, MemberTeamSubmission.ReviewStatus.PENDING)
+        self.assertEqual(submission.members.count(), 3)
+
+        self.client.logout()
+        self.client.login(username='contest-admin', password='AdminPassword2026!')
+        approve_response = self.client.post(
+            reverse('member-team-submission-review', args=[submission.id]),
+            {
+                'team_name': 'BNBU Aurora',
+                'members': [self.member_profile.id, teammate_profile.id, third_profile.id],
+                'captain': self.member_profile.id,
+                'review_note': '成员信息核对无误。',
+                'decision': 'approve',
+            },
+            follow=True,
+        )
+        self.assertEqual(approve_response.status_code, 200)
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.review_status, MemberTeamSubmission.ReviewStatus.APPROVED)
+        self.assertIsNotNone(submission.resolved_team)
+        self.assertEqual(submission.resolved_team.name, 'BNBU Aurora')
+        self.assertEqual(submission.resolved_team.captain, self.member_profile)
+        self.assertEqual(submission.resolved_team.member_count, 3)
+
+    def test_only_team_captain_can_edit_member_team(self):
+        captain_user = User.objects.create_user(
+            username='contest-member-6',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        captain_profile = MemberProfile.objects.create(
+            user=captain_user,
+            real_name='队长六号',
+            student_id='2430026666',
+            email='u430026666@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        teammate_user = User.objects.create_user(
+            username='contest-member-7',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        teammate_profile = MemberProfile.objects.create(
+            user=teammate_user,
+            real_name='队友七号',
+            student_id='2430026777',
+            email='u430026777@mail.bnbu.edu.cn',
+            major='DS',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        member_team = MemberTeam.objects.create(
+            name='BNBU Captain Only',
+            captain=captain_profile,
+            created_by=self.admin_user,
+            updated_by=self.admin_user,
+        )
+        member_team.members.add(captain_profile, self.member_profile, teammate_profile)
+
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        response = self.client.get(reverse('member-team-edit', args=[member_team.id]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_linking_member_team_in_submission_does_not_override_submission_members(self):
+        teammate_user = User.objects.create_user(
+            username='contest-member-8',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        teammate_profile = MemberProfile.objects.create(
+            user=teammate_user,
+            real_name='队友八号',
+            student_id='2430026888',
+            email='u430026888@mail.bnbu.edu.cn',
+            major='CST',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        third_user = User.objects.create_user(
+            username='contest-member-9',
+            password='MemberPassword2026!',
+            role=User.Roles.MEMBER,
+        )
+        third_profile = MemberProfile.objects.create(
+            user=third_user,
+            real_name='队友九号',
+            student_id='2430026999',
+            email='u430026999@mail.bnbu.edu.cn',
+            major='DS',
+            enrollment_year=2024,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        member_team = MemberTeam.objects.create(
+            name='BNBU Optional Link',
+            captain=self.member_profile,
+            created_by=self.admin_user,
+            updated_by=self.admin_user,
+        )
+        member_team.members.add(self.member_profile, teammate_profile, third_profile)
+
+        self.client.login(username='contest-member', password='MemberPassword2026!')
+        response = self.client.post(
+            reverse('member-contest-submission-apply'),
+            {
+                'contest_name': '链接队伍测试赛',
+                'contest_series': Contest.Series.INVITATIONAL,
+                'contest_season': '2026',
+                'contest_stage': '测试赛',
+                'contest_date': timezone.localdate(),
+                'organizer': '组委会',
+                'contest_level': Contest.Level.CAMPUS,
+                'linked_member_team': member_team.id,
+                'team_name': '临时申报队名',
+                'team_members': [teammate_profile.id],
+                'external_teammates': '',
+                'award_type': ContestResult.AwardType.PARTICIPATION,
+                'award_label': '',
+                'rank_label': '',
+                'result_tier': ContestResult.ResultTier.ENTRY,
+                'evidence_url': '',
+                'submission_note': '仅测试队伍关联',
+            },
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        submission = ContestSubmission.objects.get(contest_name='链接队伍测试赛')
+        self.assertEqual(submission.linked_member_team, member_team)
+        self.assertQuerysetEqual(
+            submission.team_members.order_by('id'),
+            [self.member_profile, teammate_profile],
+            transform=lambda profile: profile,
+        )
+        self.assertNotIn(third_profile, submission.team_members.all())
 
     def test_reviewing_submission_cannot_overwrite_existing_official_result(self):
         official_result = ContestResult.objects.create(

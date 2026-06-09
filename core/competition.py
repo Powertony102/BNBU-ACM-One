@@ -2,7 +2,15 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-from .models import Contest, ContestResult, MemberCompetitionProfile, MemberProfile
+from .models import (
+    CheckInRecord,
+    Contest,
+    ContestResult,
+    EventSeries,
+    EventSeriesCompletion,
+    MemberCompetitionProfile,
+    MemberProfile,
+)
 
 
 LEVEL_WEIGHT_MAP = {
@@ -135,6 +143,63 @@ def get_member_verified_results(member):
     )
 
 
+def get_member_completed_series_completions(member):
+    return (
+        EventSeriesCompletion.objects.filter(
+            member=member,
+            is_completed_for_rating=True,
+            series__rating_enabled=True,
+            series__status=EventSeries.Status.PUBLISHED,
+        )
+        .select_related('series')
+        .order_by('-completed_at', '-updated_at', '-id')
+    )
+
+
+def sync_event_series_completion(member, series):
+    if series is None:
+        return None
+    valid_checkins = (
+        CheckInRecord.objects.filter(
+            member=member,
+            event__series=series,
+            status=CheckInRecord.Status.VALID,
+        )
+        .select_related('event')
+        .order_by('-checkin_time')
+    )
+    valid_checkin_count = valid_checkins.values('event_id').distinct().count()
+    latest_checkin = valid_checkins.first()
+    is_completed_for_rating = (
+        series.rating_enabled
+        and series.status == EventSeries.Status.PUBLISHED
+        and valid_checkin_count >= series.required_checkins_for_rating
+    )
+    rating_delta = series.rating_points if is_completed_for_rating else 0
+    completion, _ = EventSeriesCompletion.objects.get_or_create(member=member, series=series)
+    completed_at = completion.completed_at
+    if is_completed_for_rating and completed_at is None:
+        completed_at = latest_checkin.checkin_time if latest_checkin else timezone.now()
+    if not is_completed_for_rating:
+        completed_at = None
+    completion.valid_checkin_count = valid_checkin_count
+    completion.is_completed_for_rating = is_completed_for_rating
+    completion.rating_delta = rating_delta
+    completion.completed_at = completed_at
+    completion.last_counted_checkin_at = latest_checkin.checkin_time if latest_checkin else None
+    completion.save(
+        update_fields=[
+            'valid_checkin_count',
+            'is_completed_for_rating',
+            'rating_delta',
+            'completed_at',
+            'last_counted_checkin_at',
+            'updated_at',
+        ]
+    )
+    return completion
+
+
 def choose_highest_award(results):
     ranked = sorted(
         results,
@@ -157,13 +222,16 @@ def sync_member_competition_profile(member, today=None):
     today = today or timezone.localdate()
     competition_profile = get_or_create_competition_profile(member)
     results = list(get_member_verified_results(member))
-    total_rating = 0
+    contest_rating = 0
     for result in results:
         new_delta = calculate_result_rating_delta(result, today=today)
         if result.rating_delta != new_delta:
             result.rating_delta = new_delta
             result.save(update_fields=['rating_delta'])
-        total_rating += new_delta
+        contest_rating += new_delta
+    series_completions = list(get_member_completed_series_completions(member))
+    series_rating = sum(completion.rating_delta for completion in series_completions)
+    total_rating = contest_rating + series_rating
 
     current_level = get_competition_level(total_rating)
     latest_result = results[0] if results else None

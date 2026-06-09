@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | One BNBU-ACM{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">提交后进入管理员审核，审核通过后正式生效</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ page_title }}</h2>
+    <p>每支队伍固定 3 名成员。你可以搜索成员并调整队伍名字、成员和队长；只有队长在审核通过后拥有继续编辑该队伍的权限。</p>
+    {% if pending_submission %}
+        <div class="messages" style="margin-top: 16px;">
+            <div class="message warning">这支队伍当前已有待审核编辑申请，本次保存会继续更新这条待审核申请。</div>
+        </div>
+    {% endif %}
+</section>
+
+<section class="grid">
+    <article class="card">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <p>
+                {{ form.team_name.label_tag }}
+                {{ form.team_name }}
+                {{ form.team_name.errors }}
+                {% if form.team_name.help_text %}<span class="helptext">{{ form.team_name.help_text }}</span>{% endif %}
+            </p>
+            <p>
+                {{ form.captain.label_tag }}
+                {{ form.captain }}
+                {{ form.captain.errors }}
+                {% if form.captain.help_text %}<span class="helptext">{{ form.captain.help_text }}</span>{% endif %}
+            </p>
+            <div style="display: grid; gap: 8px; margin-bottom: 16px;">
+                <label for="member-search">搜索成员</label>
+                <input
+                    id="member-search"
+                    class="member-picker-search"
+                    type="text"
+                    placeholder="按姓名或学号筛选成员"
+                    data-member-search
+                    data-member-target="member-picker"
+                >
+                {{ form.members.errors }}
+                {% if form.members.help_text %}<span class="helptext">{{ form.members.help_text }}</span>{% endif %}
+                <div id="member-picker" class="member-picker-shell">
+                    <div class="member-picker-list">
+                        {% for option in member_picker_options %}
+                            <label class="member-picker-item" data-member-option data-member-search-text="{{ option.member.real_name }} {{ option.member.student_id }} {{ option.member.major }}">
+                                <input type="checkbox" name="members" value="{{ option.member.id }}" {% if option.checked %}checked{% endif %}>
+                                <span class="member-picker-copy">
+                                    <strong>{{ option.member.real_name }}</strong>
+                                    <span>{{ option.member.student_id }}{% if option.member.major %} · {{ option.member.major }}{% endif %}</span>
+                                </span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">提交审核</button>
+                <a class="quick-link" href="{% url 'member-team-list' %}">返回队伍列表</a>
+            </div>
+        </form>
+    </article>
+    <article class="card soft">
+        <div class="card-header">
+            <h3>填写说明</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>成员数量：</strong><span class="muted">固定 3 人，提交申请的本人也必须包含在内。</span></div>
+            <div><strong>队长权限：</strong><span class="muted">审核通过后，只有当前队长可以继续发起编辑申请。</span></div>
+            <div><strong>成员复用：</strong><span class="muted">同一位成员可以同时出现在多支不同队伍中。</span></div>
+        </div>
+    </article>
+</section>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-member-search]').forEach(function (input) {
+            var targetId = input.getAttribute('data-member-target');
+            var shell = document.getElementById(targetId);
+            if (!shell) {
+                return;
+            }
+            var options = Array.prototype.slice.call(shell.querySelectorAll('[data-member-option]'));
+            var sync = function () {
+                var keyword = input.value.trim().toLowerCase();
+                options.forEach(function (option) {
+                    var haystack = (option.getAttribute('data-member-search-text') || '').toLowerCase();
+                    option.classList.toggle('is-hidden', keyword && haystack.indexOf(keyword) === -1);
+                });
+            };
+            input.addEventListener('input', sync);
+            sync();
+        });
+    });
+</script>
+{% endblock %}

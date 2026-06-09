@@ -872,6 +872,56 @@
             border-color: #fecaca;
         }
 
+        .member-picker-shell {
+            display: grid;
+            gap: 12px;
+        }
+
+        .member-picker-search {
+            min-height: 40px;
+        }
+
+        .member-picker-list {
+            display: grid;
+            gap: 10px;
+            max-height: 320px;
+            overflow: auto;
+            padding: 6px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: rgba(250, 250, 250, 0.82);
+        }
+
+        .member-picker-item {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 10px;
+            align-items: start;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--card);
+        }
+
+        .member-picker-item.is-hidden {
+            display: none;
+        }
+
+        .member-picker-copy {
+            display: grid;
+            gap: 4px;
+        }
+
+        .member-picker-copy strong {
+            font-size: 0.95rem;
+        }
+
+        .member-picker-copy span {
+            color: var(--muted-foreground);
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+
         @media (max-width: 980px) {
             .app-shell {
                 grid-template-columns: 1fr;
@@ -936,6 +986,9 @@
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-competition-ladder' or request.resolver_match.url_name == 'member-competition-profile-public' %}active{% endif %}" href="{% url 'member-competition-ladder' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>竞赛天梯</span></span>
                             </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-team-list' or request.resolver_match.url_name == 'member-team-create' or request.resolver_match.url_name == 'member-team-edit' %}active{% endif %}" href="{% url 'member-team-list' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>队伍管理</span></span>
+                            </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'member-contest-submission-list' or request.resolver_match.url_name == 'member-contest-submission-apply' %}active{% endif %}" href="{% url 'member-contest-submission-list' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项申报</span></span>
                             </a>
@@ -962,6 +1015,9 @@
                             </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'contest-list-manage' or request.resolver_match.url_name == 'contest-create' or request.resolver_match.url_name == 'contest-detail-manage' or request.resolver_match.url_name == 'contest-edit' or request.resolver_match.url_name == 'contest-archive' or request.resolver_match.url_name == 'contest-publish' or request.resolver_match.url_name == 'contest-team-create' or request.resolver_match.url_name == 'contest-team-edit' or request.resolver_match.url_name == 'contest-result-create' or request.resolver_match.url_name == 'contest-result-edit' or request.resolver_match.url_name == 'contest-result-revoke' or request.resolver_match.url_name == 'contest-result-restore' %}active{% endif %}" href="{% url 'contest-list-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>赛事管理</span></span>
+                            </a>
+                            <a class="nav-item {% if request.resolver_match.url_name == 'member-team-submission-list-manage' or request.resolver_match.url_name == 'member-team-submission-detail-manage' or request.resolver_match.url_name == 'member-team-submission-review' %}active{% endif %}" href="{% url 'member-team-submission-list-manage' %}">
+                                <span class="nav-item-label"><span class="nav-bullet"></span><span>队伍审核</span></span>
                             </a>
                             <a class="nav-item {% if request.resolver_match.url_name == 'contest-submission-list-manage' or request.resolver_match.url_name == 'contest-submission-detail-manage' or request.resolver_match.url_name == 'contest-submission-review' %}active{% endif %}" href="{% url 'contest-submission-list-manage' %}">
                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>奖项审核</span></span>

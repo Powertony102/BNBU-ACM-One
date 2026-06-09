@@ -56,6 +56,7 @@
         </div>
         <div class="stack" style="gap: 10px;">
             <div><strong>申请人：</strong><span class="muted">{{ submission.applicant.member_profile.real_name|default:submission.applicant.username }}</span></div>
+            <div><strong>关联队伍：</strong><span class="muted">{{ submission.linked_member_team.name|default:"未选择" }}</span></div>
             <div><strong>审核人：</strong><span class="muted">{% if submission.reviewed_by %}{{ submission.reviewed_by.admin_profile.display_name|default:submission.reviewed_by.username }}{% else %}暂未审核{% endif %}</span></div>
             <div><strong>审核说明：</strong><span class="muted">{{ submission.review_note|default:"暂无" }}</span></div>
             <div><strong>正式赛事：</strong><span class="muted">{% if submission.resolved_contest %}{{ submission.resolved_contest.name }}{% else %}尚未生成{% endif %}</span></div>

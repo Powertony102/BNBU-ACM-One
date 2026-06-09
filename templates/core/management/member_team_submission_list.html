@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}队伍审核 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}队伍审核{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">审核成员提交的新增/编辑队伍申请</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>队伍审核</h2>
+    <p>成员侧的队伍新增和编辑都会先进入这里。审核通过后，正式队伍信息才会更新，并作为奖项申报里的可选队伍来源。</p>
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'contest-submission-list-manage' %}">查看奖项审核</a>
+        <a class="quick-link" href="{% url 'management-dashboard' %}">返回管理首页</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>筛选条件</h3>
+        </div>
+        <form method="get">
+            <p>
+                <label for="id_q">搜索</label>
+                <input id="id_q" type="text" name="q" value="{{ query }}" placeholder="队伍名 / 申请人 / 成员姓名 / 学号">
+            </p>
+            <p>
+                <label for="id_action">申请类型</label>
+                <select id="id_action" name="action">
+                    <option value="">全部类型</option>
+                    {% for value, label in action_choices %}
+                        <option value="{{ value }}" {% if selected_action == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <p>
+                <label for="id_status">审核状态</label>
+                <select id="id_status" name="status">
+                    <option value="">全部状态</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">应用筛选</button>
+                <a class="quick-link" href="{% url 'member-team-submission-list-manage' %}">重置</a>
+            </div>
+        </form>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>申请列表</h3>
+            <span class="pill">待审核 {{ pending_total }} 条</span>
+        </div>
+        <div class="feed-list">
+            {% for submission in submissions %}
+                <a class="feed-item" href="{% url 'member-team-submission-detail-manage' submission.id %}">
+                    <div>
+                        <div class="feed-item-title">{{ submission.team_name }}</div>
+                        <div class="feed-item-meta">{{ submission.get_action_type_display }} · {{ submission.applicant.member_profile.real_name|default:submission.applicant.username }}</div>
+                        <div class="feed-item-meta">
+                            队长：{{ submission.captain.real_name|default:"待定" }} ·
+                            {% for member in submission.members.all %}
+                                {{ member.real_name }}{% if not forloop.last %}、{% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                        {{ submission.get_review_status_display }}
+                    </span>
+                </a>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无队伍申请</div>
+                        <div class="feed-item-meta">成员提交新增或编辑队伍后，会集中出现在这里。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

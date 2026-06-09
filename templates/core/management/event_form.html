@@ -156,7 +156,7 @@
 </style>
 <section class="page-hero">
     <h2>{{ page_title }}</h2>
-    <p>这里配置活动基本信息、活动时间和签到时间窗口；如有需要，也可以指定最多 5 名 Member 代为管理这场活动的签到。</p>
+    <p>这里配置活动基本信息、所属系列、活动时间和签到时间窗口；如有需要，也可以指定最多 5 名 Member 代为管理这场活动的签到。</p>
 </section>
 
 <section class="card">
@@ -196,6 +196,24 @@
             {{ form.location.label_tag }}
             {{ form.location }}
             {{ form.location.errors }}
+        </div>
+
+        <div class="form-row">
+            {{ form.series.label_tag }}
+            {{ form.series }}
+            {{ form.series.errors }}
+            {% if form.series.help_text %}
+                <span class="helptext">{{ form.series.help_text }}</span>
+            {% endif %}
+        </div>
+
+        <div class="form-row">
+            {{ form.series_order.label_tag }}
+            {{ form.series_order }}
+            {{ form.series_order.errors }}
+            {% if form.series_order.help_text %}
+                <span class="helptext">{{ form.series_order.help_text }}</span>
+            {% endif %}
         </div>
 
         <div class="form-row">

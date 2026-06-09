@@ -104,6 +104,47 @@ class AdminProfile(models.Model):
         return self.display_name
 
 
+class EventSeries(models.Model):
+    class SeriesType(models.TextChoices):
+        TRAINING = 'training', '训练'
+        LECTURE = 'lecture', '讲座'
+        SHARING = 'sharing', '分享会'
+        OTHER = 'other', '其他'
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', '草稿'
+        PUBLISHED = 'published', '已发布'
+        ARCHIVED = 'archived', '已归档'
+
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    series_type = models.CharField(max_length=20, choices=SeriesType.choices, default=SeriesType.TRAINING)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    expected_event_count = models.PositiveSmallIntegerField(default=10)
+    required_checkins_for_rating = models.PositiveSmallIntegerField(default=1)
+    rating_enabled = models.BooleanField(default=False)
+    rating_points = models.IntegerField(default=0)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='created_event_series')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '系列活动'
+        verbose_name_plural = '系列活动'
+
+    def __str__(self):
+        return self.title
+
+    def clean(self):
+        if self.required_checkins_for_rating < 1:
+            raise ValidationError({'required_checkins_for_rating': '计入 rating 所需签到次数不能少于 1。'})
+        if self.required_checkins_for_rating > self.expected_event_count:
+            raise ValidationError({'required_checkins_for_rating': '计入 rating 所需签到次数不能超过预期活动总数。'})
+
+
 class Event(models.Model):
     class EventType(models.TextChoices):
         TRAINING = 'training', '训练'
@@ -127,6 +168,14 @@ class Event(models.Model):
     event_type = models.CharField(max_length=20, choices=EventType.choices, default=EventType.TRAINING)
     description = models.TextField(blank=True)
     location = models.CharField(max_length=200)
+    series = models.ForeignKey(
+        EventSeries,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='events',
+    )
+    series_order = models.PositiveSmallIntegerField(null=True, blank=True)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     checkin_start_time = models.DateTimeField()
@@ -165,6 +214,13 @@ class Event(models.Model):
 
     class Meta:
         ordering = ['start_time']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['series', 'series_order'],
+                condition=models.Q(series__isnull=False),
+                name='unique_series_order',
+            ),
+        ]
 
     def __str__(self):
         return self.title
@@ -392,6 +448,118 @@ class MemberCompetitionProfile(models.Model):
         return f'{self.member.real_name} · {self.current_rating}'
 
 
+class MemberTeam(models.Model):
+    name = models.CharField(max_length=200)
+    members = models.ManyToManyField(MemberProfile, related_name='member_teams', blank=True)
+    captain = models.ForeignKey(
+        MemberProfile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='captained_member_teams',
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='created_member_teams',
+    )
+    updated_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_member_teams',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name', 'id']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def member_names(self):
+        members = getattr(self, '_prefetched_objects_cache', {}).get('members')
+        if members is None:
+            members = self.members.all()
+        return '、'.join(member.real_name for member in members) or '未分配成员'
+
+    @property
+    def member_count(self):
+        members = getattr(self, '_prefetched_objects_cache', {}).get('members')
+        if members is None:
+            return self.members.count()
+        return len(members)
+
+
+class MemberTeamSubmission(models.Model):
+    class ActionType(models.TextChoices):
+        CREATE = 'create', '新增队伍'
+        EDIT = 'edit', '编辑队伍'
+
+    class ReviewStatus(models.TextChoices):
+        PENDING = 'pending', '待审核'
+        APPROVED = 'approved', '已通过'
+        REJECTED = 'rejected', '已驳回'
+
+    applicant = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='member_team_submissions',
+    )
+    action_type = models.CharField(max_length=20, choices=ActionType.choices, default=ActionType.CREATE)
+    target_team = models.ForeignKey(
+        MemberTeam,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='pending_submissions',
+    )
+    team_name = models.CharField(max_length=200)
+    members = models.ManyToManyField(MemberProfile, related_name='member_team_submissions', blank=True)
+    captain = models.ForeignKey(
+        MemberProfile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='captain_member_team_submissions',
+    )
+    review_status = models.CharField(max_length=20, choices=ReviewStatus.choices, default=ReviewStatus.PENDING)
+    review_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reviewed_member_team_submissions',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    resolved_team = models.ForeignKey(
+        MemberTeam,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='submission_records',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['target_team'],
+                condition=models.Q(review_status='pending', target_team__isnull=False),
+                name='unique_pending_member_team_submission_per_team',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.get_action_type_display()} · {self.team_name}'
+
+
 class ContestSubmission(models.Model):
     class ReviewStatus(models.TextChoices):
         PENDING = 'pending', '待审核'
@@ -406,6 +574,13 @@ class ContestSubmission(models.Model):
     contest_date = models.DateField()
     organizer = models.CharField(max_length=200, blank=True)
     contest_level = models.CharField(max_length=20, choices=Contest.Level.choices, default=Contest.Level.CAMPUS)
+    linked_member_team = models.ForeignKey(
+        MemberTeam,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='contest_submissions',
+    )
     team_name = models.CharField(max_length=200)
     team_members = models.ManyToManyField(MemberProfile, related_name='contest_submissions', blank=True)
     external_teammates = models.CharField(max_length=255, blank=True)
@@ -543,6 +718,28 @@ class CheckInRecord(models.Model):
 
     def __str__(self):
         return f'{self.member} - {self.event}'
+
+
+class EventSeriesCompletion(models.Model):
+    member = models.ForeignKey(MemberProfile, on_delete=models.CASCADE, related_name='series_completions')
+    series = models.ForeignKey(EventSeries, on_delete=models.CASCADE, related_name='completions')
+    valid_checkin_count = models.PositiveSmallIntegerField(default=0)
+    is_completed_for_rating = models.BooleanField(default=False)
+    rating_delta = models.IntegerField(default=0)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    last_counted_checkin_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(fields=['member', 'series'], name='unique_member_series_completion'),
+        ]
+
+    def __str__(self):
+        status = '达标' if self.is_completed_for_rating else '进行中'
+        return f'{self.member} · {self.series.title} ({status})'
 
 
 class SystemSetting(models.Model):

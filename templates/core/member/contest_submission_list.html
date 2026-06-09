@@ -39,6 +39,7 @@
                     <td>
                         <div class="table-title">{{ submission.team_name }}</div>
                         <div class="table-subtitle">
+                            {% if submission.linked_member_team %}关联队伍：{{ submission.linked_member_team.name }} · {% endif %}
                             {% for member in submission.team_members.all %}
                                 {{ member.real_name }}{% if not forloop.last %}、{% endif %}
                             {% endfor %}

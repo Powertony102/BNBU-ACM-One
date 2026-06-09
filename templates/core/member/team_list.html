@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}队伍管理 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}队伍管理{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">三人队伍由成员申请，管理员审核后生效</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>队伍管理</h2>
+    <p>每支队伍固定 3 名成员。你可以发起新增队伍申请，或在自己担任队长的队伍上发起编辑申请；所有变更都需要管理员审核后才会正式生效。</p>
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'member-team-create' %}">新增队伍</a>
+        <a class="quick-link" href="{% url 'member-contest-submission-list' %}">查看奖项申报</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>我所在的队伍</h3>
+            <span class="pill">{{ teams|length }} 支</span>
+        </div>
+        <div class="event-list">
+            {% for team in teams %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">{{ team.name }}</div>
+                        <div class="event-item-meta">队长：{{ team.captain.real_name|default:"待定" }} · {{ team.member_names }}</div>
+                        <div class="event-item-meta">
+                            {% if team.captain_id == profile.id %}
+                                你的身份：队长
+                            {% else %}
+                                你的身份：队员
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="inline-actions">
+                        <span class="badge {% if team.captain_id == profile.id %}live{% else %}dim{% endif %}">
+                            {% if team.captain_id == profile.id %}可编辑{% else %}仅查看{% endif %}
+                        </span>
+                        {% if team.captain_id == profile.id %}
+                            <a class="quick-link" href="{% url 'member-team-edit' team.id %}">编辑队伍</a>
+                        {% endif %}
+                    </div>
+                </div>
+            {% empty %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">还没有已生效队伍</div>
+                        <div class="event-item-meta">可以先发起新增队伍申请，审核通过后会出现在这里。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>我的申请记录</h3>
+            <span class="pill">{{ submissions|length }} 条</span>
+        </div>
+        <div class="feed-list">
+            {% for submission in submissions %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ submission.team_name }}</div>
+                        <div class="feed-item-meta">{{ submission.get_action_type_display }} · 队长 {{ submission.captain.real_name|default:"待定" }}</div>
+                        <div class="feed-item-meta">
+                            {% for member in submission.members.all %}
+                                {{ member.real_name }}{% if not forloop.last %}、{% endif %}
+                            {% endfor %}
+                        </div>
+                        <div class="feed-item-meta">{{ submission.review_note|default:"等待管理员审核" }}</div>
+                    </div>
+                    <span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                        {{ submission.get_review_status_display }}
+                    </span>
+                </div>
+            {% empty %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">暂无申请</div>
+                        <div class="feed-item-meta">新增或编辑队伍后，这里会显示对应的审核状态。</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

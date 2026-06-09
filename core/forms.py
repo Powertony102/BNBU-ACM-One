@@ -17,6 +17,9 @@ from .models import (
     ContestSubmission,
     ContestTeam,
     Event,
+    EventSeries,
+    MemberTeam,
+    MemberTeamSubmission,
     MemberProfile,
     User,
 )
@@ -390,6 +393,7 @@ class EventForm(forms.ModelForm):
         label='签到结束时间',
         widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
     )
+    series_order = forms.IntegerField(label='系列内序号', min_value=1, required=False)
 
     class Meta:
         model = Event
@@ -398,6 +402,8 @@ class EventForm(forms.ModelForm):
             'event_type',
             'description',
             'location',
+            'series',
+            'series_order',
             'start_time',
             'end_time',
             'checkin_start_time',
@@ -410,6 +416,7 @@ class EventForm(forms.ModelForm):
             'event_type': '活动类型',
             'description': '活动描述',
             'location': '活动地点',
+            'series': '所属系列',
             'status': '状态',
         }
 
@@ -428,6 +435,10 @@ class EventForm(forms.ModelForm):
         self.fields['checkin_managers'].label_from_instance = (
             lambda user: f'{user.member_profile.real_name} ({user.member_profile.student_id})'
         )
+        self.fields['series'].queryset = EventSeries.objects.order_by('-created_at', 'title')
+        self.fields['series'].required = False
+        self.fields['series'].help_text = '可选。选择后，这场活动将归入对应系列。'
+        self.fields['series_order'].help_text = '可选。用于标识这是系列中的第几次活动。'
 
     def clean_checkin_managers(self):
         checkin_managers = self.cleaned_data['checkin_managers']
@@ -438,6 +449,55 @@ class EventForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         validate_event_schedule(self, cleaned_data)
+        series = cleaned_data.get('series')
+        series_order = cleaned_data.get('series_order')
+        if series_order and not series:
+            self.add_error('series', '填写系列内序号前，请先选择所属系列。')
+        if series and series_order and series.expected_event_count and series_order > series.expected_event_count:
+            self.add_error('series_order', '系列内序号不能超过该系列的预期活动总数。')
+        return cleaned_data
+
+
+class EventSeriesForm(forms.ModelForm):
+    class Meta:
+        model = EventSeries
+        fields = [
+            'title',
+            'description',
+            'series_type',
+            'status',
+            'start_date',
+            'end_date',
+            'expected_event_count',
+            'required_checkins_for_rating',
+            'rating_enabled',
+            'rating_points',
+        ]
+        labels = {
+            'title': '系列名称',
+            'description': '系列描述',
+            'series_type': '系列类型',
+            'status': '状态',
+            'start_date': '开始日期',
+            'end_date': '结束日期',
+            'expected_event_count': '预期活动总数',
+            'required_checkins_for_rating': '计入 Rating 所需签到次数',
+            'rating_enabled': '参与 Rating',
+            'rating_points': 'Rating 分值',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        self.fields['start_date'].widget = forms.DateInput(attrs={'type': 'date'})
+        self.fields['end_date'].widget = forms.DateInput(attrs={'type': 'date'})
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get('start_date')
+        end_date = cleaned_data.get('end_date')
+        if start_date and end_date and end_date < start_date:
+            self.add_error('end_date', '结束日期不能早于开始日期。')
         return cleaned_data
 
 
@@ -679,6 +739,71 @@ class ContestTeamForm(forms.ModelForm):
         return cleaned_data
 
 
+class MemberTeamSubmissionForm(forms.ModelForm):
+    members = forms.ModelMultipleChoiceField(
+        label='队伍成员',
+        queryset=MemberProfile.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        help_text='固定 3 名成员，可搜索后勾选；申请人必须在队伍中。',
+    )
+    captain = forms.ModelChoiceField(
+        label='队长',
+        queryset=MemberProfile.objects.none(),
+        help_text='只有队长在审核通过后拥有编辑队伍权限。',
+    )
+
+    class Meta:
+        model = MemberTeamSubmission
+        fields = ['team_name', 'members', 'captain']
+        labels = {
+            'team_name': '队伍名称',
+        }
+
+    def __init__(self, applicant_profile=None, *args, **kwargs):
+        self.applicant_profile = applicant_profile
+        super().__init__(*args, **kwargs)
+        apply_widget_attrs(self.fields)
+        member_queryset = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE)
+        current_member_ids = []
+        if self.instance and self.instance.pk:
+            current_member_ids = list(self.instance.members.values_list('id', flat=True))
+        if current_member_ids:
+            member_queryset = member_queryset | MemberProfile.objects.filter(id__in=current_member_ids)
+        if self.instance and self.instance.captain_id:
+            member_queryset = member_queryset | MemberProfile.objects.filter(id=self.instance.captain_id)
+        member_queryset = member_queryset.distinct().order_by('real_name', 'student_id')
+        self.fields['members'].queryset = member_queryset
+        self.fields['captain'].queryset = member_queryset
+        self.fields['members'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
+        self.fields['captain'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
+        self.fields['team_name'].widget.attrs['placeholder'] = '例如 BNBU Rising'
+
+    def clean_team_name(self):
+        return self.cleaned_data['team_name'].strip()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        members = cleaned_data.get('members')
+        captain = cleaned_data.get('captain')
+        if members is None:
+            return cleaned_data
+        if len(members) != 3:
+            self.add_error('members', '每个队伍必须恰好选择 3 名成员。')
+        if captain and captain not in members:
+            self.add_error('captain', '队长必须包含在所选成员中。')
+        if self.applicant_profile and self.applicant_profile not in members:
+            self.add_error('members', '提交申请的队员必须包含在队伍成员中。')
+        return cleaned_data
+
+
+class MemberTeamSubmissionReviewForm(MemberTeamSubmissionForm):
+    review_note = forms.CharField(
+        label='审核说明',
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': '可填写通过/驳回原因，便于队员查看。'}),
+    )
+
+
 class ContestResultForm(forms.ModelForm):
     verified = forms.BooleanField(label='立即认证', required=False)
 
@@ -743,6 +868,12 @@ class ContestResultForm(forms.ModelForm):
 
 class ContestSubmissionForm(forms.ModelForm):
     contest_date = forms.DateField(label='比赛日期', widget=forms.DateInput(attrs={'type': 'date'}))
+    linked_member_team = forms.ModelChoiceField(
+        label='选择队伍（可选）',
+        queryset=MemberTeam.objects.none(),
+        required=False,
+        help_text='仅作为关联队伍展示，不会自动覆盖下面填写的申报信息。',
+    )
     team_members = forms.ModelMultipleChoiceField(
         label='队内成员',
         queryset=MemberProfile.objects.none(),
@@ -760,6 +891,7 @@ class ContestSubmissionForm(forms.ModelForm):
             'contest_date',
             'organizer',
             'contest_level',
+            'linked_member_team',
             'team_name',
             'team_members',
             'external_teammates',
@@ -777,6 +909,7 @@ class ContestSubmissionForm(forms.ModelForm):
             'contest_stage': '阶段',
             'organizer': '主办方',
             'contest_level': '赛事级别',
+            'linked_member_team': '选择队伍（可选）',
             'team_name': '队伍名称',
             'external_teammates': '未建档队友',
             'award_type': '奖项类型',
@@ -792,6 +925,22 @@ class ContestSubmissionForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
         member_queryset = MemberProfile.objects.filter(status=MemberProfile.Status.ACTIVE).order_by('real_name')
+        team_queryset = MemberTeam.objects.none()
+        if applicant_profile is not None:
+            team_queryset = (
+                MemberTeam.objects.filter(members=applicant_profile)
+                .select_related('captain')
+                .distinct()
+                .order_by('name', 'id')
+            )
+        if self.instance and self.instance.pk and self.instance.linked_member_team_id:
+            team_queryset = (
+                team_queryset | MemberTeam.objects.filter(id=self.instance.linked_member_team_id).select_related('captain')
+            ).distinct().order_by('name', 'id')
+        self.fields['linked_member_team'].queryset = team_queryset
+        self.fields['linked_member_team'].label_from_instance = (
+            lambda team: f'{team.name} · 队长 {team.captain.real_name if team.captain else "待定"}'
+        )
         self.fields['team_members'].queryset = member_queryset
         self.fields['team_members'].label_from_instance = lambda member: f'{member.real_name} ({member.student_id})'
         self.fields['contest_season'].widget.attrs['placeholder'] = '2026'

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}队伍申请详情 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}队伍申请详情{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">{{ submission.team_name }}</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ submission.team_name }}</h2>
+    <p>申请人：{{ submission.applicant.member_profile.real_name|default:submission.applicant.username }}。管理员可以直接调整队伍名、成员和队长，然后决定是否让正式队伍生效。</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ submission.get_action_type_display }}</strong>
+            <span>申请类型</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ submission.get_review_status_display }}</strong>
+            <span>当前审核状态</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ submission.created_at|date:"Y-m-d" }}</strong>
+            <span>提交时间</span>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'member-team-submission-list-manage' %}">返回队伍审核</a>
+        {% if submission.resolved_team %}
+            <span class="pill">正式队伍：{{ submission.resolved_team.name }}</span>
+        {% endif %}
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>审核编辑</h3>
+            <span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% else %}dim{% endif %}">
+                {{ submission.get_review_status_display }}
+            </span>
+        </div>
+        <form method="post" action="{% url 'member-team-submission-review' submission.id %}">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <p>
+                {{ form.team_name.label_tag }}
+                {{ form.team_name }}
+                {{ form.team_name.errors }}
+            </p>
+            <p>
+                {{ form.captain.label_tag }}
+                {{ form.captain }}
+                {{ form.captain.errors }}
+                {% if form.captain.help_text %}<span class="helptext">{{ form.captain.help_text }}</span>{% endif %}
+            </p>
+            <div style="display: grid; gap: 8px; margin-bottom: 16px;">
+                <label for="member-search">搜索成员</label>
+                <input
+                    id="member-search"
+                    class="member-picker-search"
+                    type="text"
+                    placeholder="按姓名或学号筛选成员"
+                    data-member-search
+                    data-member-target="member-picker"
+                >
+                {{ form.members.errors }}
+                {% if form.members.help_text %}<span class="helptext">{{ form.members.help_text }}</span>{% endif %}
+                <div id="member-picker" class="member-picker-shell">
+                    <div class="member-picker-list">
+                        {% for option in member_picker_options %}
+                            <label class="member-picker-item" data-member-option data-member-search-text="{{ option.member.real_name }} {{ option.member.student_id }} {{ option.member.major }}">
+                                <input type="checkbox" name="members" value="{{ option.member.id }}" {% if option.checked %}checked{% endif %}>
+                                <span class="member-picker-copy">
+                                    <strong>{{ option.member.real_name }}</strong>
+                                    <span>{{ option.member.student_id }}{% if option.member.major %} · {{ option.member.major }}{% endif %}</span>
+                                </span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <p>
+                {{ form.review_note.label_tag }}
+                {{ form.review_note }}
+                {{ form.review_note.errors }}
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit" name="decision" value="approve">审核通过并生效</button>
+                <button class="button subtle" type="submit" name="decision" value="reject">驳回申请</button>
+            </div>
+        </form>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>审核信息</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>申请人：</strong><span class="muted">{{ submission.applicant.member_profile.real_name|default:submission.applicant.username }}</span></div>
+            <div><strong>原队伍：</strong><span class="muted">{{ submission.target_team.name|default:"新增队伍" }}</span></div>
+            <div><strong>正式队伍：</strong><span class="muted">{{ submission.resolved_team.name|default:"尚未生效" }}</span></div>
+            <div><strong>审核人：</strong><span class="muted">{% if submission.reviewed_by %}{{ submission.reviewed_by.admin_profile.display_name|default:submission.reviewed_by.username }}{% else %}暂未审核{% endif %}</span></div>
+            <div><strong>审核说明：</strong><span class="muted">{{ submission.review_note|default:"暂无" }}</span></div>
+        </div>
+    </article>
+</section>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-member-search]').forEach(function (input) {
+            var targetId = input.getAttribute('data-member-target');
+            var shell = document.getElementById(targetId);
+            if (!shell) {
+                return;
+            }
+            var options = Array.prototype.slice.call(shell.querySelectorAll('[data-member-option]'));
+            var sync = function () {
+                var keyword = input.value.trim().toLowerCase();
+                options.forEach(function (option) {
+                    var haystack = (option.getAttribute('data-member-search-text') || '').toLowerCase();
+                    option.classList.toggle('is-hidden', keyword && haystack.indexOf(keyword) === -1);
+                });
+            };
+            input.addEventListener('input', sync);
+            sync();
+        });
+    });
+</script>
+{% endblock %}

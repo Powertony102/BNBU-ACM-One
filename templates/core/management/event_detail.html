@@ -115,6 +115,16 @@
         <div class="stack" style="gap: 10px;">
             <div><strong>类型：</strong><span class="muted">{{ event.get_event_type_display }}</span></div>
             <div><strong>地点：</strong><span class="muted">{{ event.location }}</span></div>
+            <div>
+                <strong>所属系列：</strong>
+                <span class="muted">
+                    {% if event.series %}
+                        {{ event.series.title }}{% if event.series_order %} · 第 {{ event.series_order }} 次{% endif %}
+                    {% else %}
+                        未加入系列
+                    {% endif %}
+                </span>
+            </div>
             <div><strong>活动时间：</strong><span class="muted">{{ event.start_time|date:"Y-m-d H:i" }} - {{ event.end_time|date:"Y-m-d H:i" }}</span></div>
             <div><strong>签到时间：</strong><span class="muted">{{ event.checkin_start_time|date:"Y-m-d H:i" }} - {{ event.checkin_end_time|date:"Y-m-d H:i" }}</span></div>
             <div><strong>审核状态：</strong><span class="badge {% if event.review_status == 'approved' %}live{% elif event.review_status == 'pending' %}warn{% else %}dim{% endif %}">{{ event.get_review_status_display }}</span></div>

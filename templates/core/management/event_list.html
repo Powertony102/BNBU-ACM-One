@@ -26,6 +26,7 @@
             <tr>
                 <th>活动</th>
                 <th>申请人</th>
+                <th>系列</th>
                 <th>签到管理员</th>
                 <th>审核状态</th>
                 <th>时间</th>
@@ -46,6 +47,13 @@
                             {{ event.applicant.member_profile.real_name|default:event.applicant.username }}
                         {% else %}
                             后台创建
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if event.series %}
+                            {{ event.series.title }}{% if event.series_order %} · {{ event.series_order }}{% endif %}
+                        {% else %}
+                            <span class="muted">无</span>
                         {% endif %}
                     </td>
                     <td>
@@ -76,7 +84,7 @@
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="8">还没有活动。</td>
+                    <td colspan="9">还没有活动。</td>
                 </tr>
             {% endfor %}
         </tbody>

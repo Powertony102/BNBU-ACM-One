@@ -25,6 +25,7 @@ from .competition import (
     build_competition_ladder_queryset,
     build_member_competition_snapshot,
     get_competition_level,
+    sync_event_series_completion,
     sync_member_competition_profile,
     sync_members_competition_profiles,
 )
@@ -41,6 +42,8 @@ from .forms import (
     EventReviewForm,
     LoginForm,
     ManualCheckInForm,
+    MemberTeamSubmissionForm,
+    MemberTeamSubmissionReviewForm,
     MemberProfileForm,
     MemberRegistrationForm,
     PasswordChangeConfirmForm,
@@ -58,6 +61,9 @@ from .models import (
     ContestTeam,
     Event,
     EventQRCode,
+    EventSeries,
+    MemberTeam,
+    MemberTeamSubmission,
     MemberCompetitionProfile,
     MemberProfile,
     SystemSetting,
@@ -206,6 +212,32 @@ def log_action(operator, action, target_type, target_id=None, detail=''):
         target_id=target_id,
         detail=detail,
     )
+
+
+def sync_series_completion_for_member(member, series):
+    if series is None:
+        return
+    sync_event_series_completion(member, series)
+    sync_member_competition_profile(member)
+
+
+def sync_series_completions_for_event_members(event, series_ids=None):
+    candidate_series_ids = set(series_ids or [])
+    if event.series_id:
+        candidate_series_ids.add(event.series_id)
+    candidate_series_ids.discard(None)
+    if not candidate_series_ids:
+        return
+    members = (
+        MemberProfile.objects.filter(
+            checkins__event=event,
+        )
+        .distinct()
+    )
+    series_map = EventSeries.objects.in_bulk(candidate_series_ids)
+    for member in members:
+        for series in series_map.values():
+            sync_series_completion_for_member(member, series)
 
 
 def get_star_window_days():
@@ -427,6 +459,17 @@ def can_review_contest_submission(user, submission):
     return require_management(user)
 
 
+def can_edit_member_team(user, team):
+    if not require_member(user):
+        return False
+    profile = getattr(user, 'member_profile', None)
+    return profile is not None and team.captain_id == profile.id
+
+
+def can_review_member_team_submission(user, submission):
+    return require_management(user)
+
+
 def can_edit_event(user):
     return require_management(user)
 
@@ -473,6 +516,61 @@ def revoke_contest_result(result, operator):
 
 def get_submission_member_ids(submission):
     return list(submission.team_members.values_list('id', flat=True))
+
+
+def build_member_team_submission_form_context(form):
+    selected_member_ids = {str(member_id) for member_id in (form['members'].value() or [])}
+    selected_captain_id = str(form['captain'].value() or '')
+    return {
+        'member_picker_options': [
+            {
+                'member': member,
+                'checked': str(member.id) in selected_member_ids,
+            }
+            for member in form.fields['members'].queryset
+        ],
+        'selected_captain_id': selected_captain_id,
+    }
+
+
+@transaction.atomic
+def approve_member_team_submission(submission, cleaned_data, operator):
+    members = list(cleaned_data.get('members') or [])
+    captain = cleaned_data.get('captain')
+    if len(members) != 3:
+        raise ValidationError('每个队伍必须恰好包含 3 名成员。')
+    if captain is None or captain not in members:
+        raise ValidationError('队长必须从这 3 名成员中选择。')
+    if submission.action_type == MemberTeamSubmission.ActionType.EDIT and submission.target_team is None:
+        raise ValidationError('待编辑的原队伍不存在，无法继续审核。')
+
+    team = submission.resolved_team or submission.target_team
+    if team is None:
+        team = MemberTeam(created_by=submission.applicant)
+    if not team.created_by_id:
+        team.created_by = submission.applicant
+    team.name = cleaned_data['team_name']
+    team.captain = captain
+    team.updated_by = operator
+    team.save()
+    team.members.set(members)
+
+    submission.review_status = MemberTeamSubmission.ReviewStatus.APPROVED
+    submission.review_note = cleaned_data.get('review_note', '')
+    submission.reviewed_by = operator
+    submission.reviewed_at = timezone.now()
+    submission.resolved_team = team
+    submission.save(
+        update_fields=[
+            'review_status',
+            'review_note',
+            'reviewed_by',
+            'reviewed_at',
+            'resolved_team',
+            'updated_at',
+        ]
+    )
+    return team
 
 
 def ensure_submission_result_is_not_conflicting(submission, contest, team):
@@ -869,6 +967,7 @@ def member_event_checkin(request, event_id):
         checkin_method=CheckInRecord.Method.WEB,
         created_by=request.user,
     )
+    sync_series_completion_for_member(profile, event.series)
     log_action(request.user, 'member_checkin', 'Event', event.id, f'checkin_id={checkin.id}')
     messages.success(request, '签到成功。')
     return redirect('member-event-detail', event_id=event.id)
@@ -925,12 +1024,116 @@ def member_competition_profile_public(request, member_id):
 
 
 @login_required
+def member_team_list(request):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    profile = get_object_or_404(MemberProfile, user=request.user)
+    teams = (
+        MemberTeam.objects.filter(members=profile)
+        .select_related('captain')
+        .prefetch_related('members')
+        .distinct()
+        .order_by('name', 'id')
+    )
+    submissions = (
+        MemberTeamSubmission.objects.filter(applicant=request.user)
+        .select_related('captain', 'reviewed_by', 'target_team', 'resolved_team')
+        .prefetch_related('members')
+        .order_by('-created_at')
+    )
+    return render(
+        request,
+        'core/member/team_list.html',
+        {
+            'teams': teams,
+            'submissions': submissions,
+            'profile': profile,
+        },
+    )
+
+
+@login_required
+def member_team_create(request):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    profile = get_object_or_404(MemberProfile, user=request.user)
+    form = MemberTeamSubmissionForm(applicant_profile=profile, data=request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        submission = form.save(commit=False)
+        submission.applicant = request.user
+        submission.action_type = MemberTeamSubmission.ActionType.CREATE
+        submission.review_status = MemberTeamSubmission.ReviewStatus.PENDING
+        submission.review_note = ''
+        submission.reviewed_by = None
+        submission.reviewed_at = None
+        submission.target_team = None
+        submission.resolved_team = None
+        submission.save()
+        form.save_m2m()
+        log_action(request.user, 'create_member_team_submission', 'MemberTeamSubmission', submission.id)
+        messages.success(request, '新增队伍申请已提交，等待管理员审核。')
+        return redirect('member-team-list')
+    context = {
+        'form': form,
+        'page_title': '新增队伍',
+    }
+    context.update(build_member_team_submission_form_context(form))
+    return render(request, 'core/member/team_form.html', context)
+
+
+@login_required
+def member_team_edit(request, team_id):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    profile = get_object_or_404(MemberProfile, user=request.user)
+    team = get_object_or_404(MemberTeam.objects.select_related('captain').prefetch_related('members'), pk=team_id)
+    if not can_edit_member_team(request.user, team):
+        return HttpResponseForbidden('仅该队伍的队长可编辑队伍。')
+    submission = team.pending_submissions.filter(review_status=MemberTeamSubmission.ReviewStatus.PENDING).first()
+    if submission is None:
+        submission = MemberTeamSubmission(
+            applicant=request.user,
+            action_type=MemberTeamSubmission.ActionType.EDIT,
+            target_team=team,
+            team_name=team.name,
+            captain=team.captain,
+        )
+    form = MemberTeamSubmissionForm(applicant_profile=profile, data=request.POST or None, instance=submission)
+    if request.method == 'GET' and submission.pk is None:
+        form.fields['members'].initial = list(team.members.values_list('id', flat=True))
+        form.fields['captain'].initial = team.captain_id
+    if request.method == 'POST' and form.is_valid():
+        submission = form.save(commit=False)
+        submission.applicant = request.user
+        submission.action_type = MemberTeamSubmission.ActionType.EDIT
+        submission.target_team = team
+        submission.review_status = MemberTeamSubmission.ReviewStatus.PENDING
+        submission.review_note = ''
+        submission.reviewed_by = None
+        submission.reviewed_at = None
+        submission.resolved_team = None
+        submission.save()
+        form.save_m2m()
+        log_action(request.user, 'edit_member_team_submission', 'MemberTeamSubmission', submission.id, f'team_id={team.id}')
+        messages.success(request, '队伍编辑申请已提交，等待管理员审核。')
+        return redirect('member-team-list')
+    context = {
+        'form': form,
+        'page_title': '编辑队伍',
+        'team': team,
+        'pending_submission': submission if submission.pk else None,
+    }
+    context.update(build_member_team_submission_form_context(form))
+    return render(request, 'core/member/team_form.html', context)
+
+
+@login_required
 def member_contest_submission_list(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
     submissions = (
         ContestSubmission.objects.filter(applicant=request.user)
-        .select_related('reviewed_by', 'resolved_contest', 'resolved_result')
+        .select_related('reviewed_by', 'resolved_contest', 'resolved_result', 'linked_member_team')
         .prefetch_related('team_members')
         .order_by('-created_at')
     )
@@ -1182,12 +1385,142 @@ def contest_list_manage(request):
 
 
 @login_required
+def member_team_submission_list_manage(request):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    selected_status = request.GET.get('status', '').strip()
+    selected_action = request.GET.get('action', '').strip()
+    query = request.GET.get('q', '').strip()
+    submissions = (
+        MemberTeamSubmission.objects.select_related(
+            'applicant',
+            'applicant__member_profile',
+            'captain',
+            'reviewed_by',
+            'target_team',
+            'resolved_team',
+        )
+        .prefetch_related('members')
+        .order_by('-created_at')
+    )
+    if selected_status:
+        submissions = submissions.filter(review_status=selected_status)
+    if selected_action:
+        submissions = submissions.filter(action_type=selected_action)
+    if query:
+        submissions = submissions.filter(
+            Q(team_name__icontains=query)
+            | Q(applicant__username__icontains=query)
+            | Q(applicant__member_profile__real_name__icontains=query)
+            | Q(members__real_name__icontains=query)
+            | Q(members__student_id__icontains=query)
+        ).distinct()
+    return render(
+        request,
+        'core/management/member_team_submission_list.html',
+        {
+            'submissions': submissions,
+            'selected_status': selected_status,
+            'selected_action': selected_action,
+            'query': query,
+            'status_choices': MemberTeamSubmission.ReviewStatus.choices,
+            'action_choices': MemberTeamSubmission.ActionType.choices,
+            'pending_total': MemberTeamSubmission.objects.filter(review_status=MemberTeamSubmission.ReviewStatus.PENDING).count(),
+        },
+    )
+
+
+@login_required
+def member_team_submission_detail_manage(request, submission_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    submission = get_object_or_404(
+        MemberTeamSubmission.objects.select_related(
+            'applicant',
+            'applicant__member_profile',
+            'captain',
+            'reviewed_by',
+            'target_team',
+            'resolved_team',
+        ).prefetch_related('members', 'resolved_team__members', 'target_team__members'),
+        pk=submission_id,
+    )
+    applicant_profile = getattr(submission.applicant, 'member_profile', None)
+    form = MemberTeamSubmissionReviewForm(applicant_profile=applicant_profile, data=request.POST or None, instance=submission)
+    context = {
+        'submission': submission,
+        'form': form,
+    }
+    context.update(build_member_team_submission_form_context(form))
+    return render(request, 'core/management/member_team_submission_detail.html', context)
+
+
+@login_required
+@transaction.atomic
+def member_team_submission_review(request, submission_id):
+    if not require_management(request.user):
+        return HttpResponseForbidden('仅管理员可访问。')
+    if request.method != 'POST':
+        return HttpResponseForbidden('仅支持 POST。')
+    submission = get_object_or_404(
+        MemberTeamSubmission.objects.select_related(
+            'applicant',
+            'applicant__member_profile',
+            'target_team',
+            'resolved_team',
+        ).prefetch_related('members'),
+        pk=submission_id,
+    )
+    if not can_review_member_team_submission(request.user, submission):
+        return HttpResponseForbidden('仅管理员可审核队伍申请。')
+    applicant_profile = getattr(submission.applicant, 'member_profile', None)
+    form = MemberTeamSubmissionReviewForm(applicant_profile=applicant_profile, data=request.POST or None, instance=submission)
+    if not form.is_valid():
+        messages.error(request, '审核表单提交失败，请检查后重试。')
+        context = {
+            'submission': submission,
+            'form': form,
+        }
+        context.update(build_member_team_submission_form_context(form))
+        return render(request, 'core/management/member_team_submission_detail.html', context)
+    decision = request.POST.get('decision')
+    if decision == 'approve':
+        try:
+            team = approve_member_team_submission(submission, form.cleaned_data, request.user)
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            messages.error(request, '队伍申请审核未通过，请先处理表单中的问题。')
+            context = {
+                'submission': submission,
+                'form': form,
+            }
+            context.update(build_member_team_submission_form_context(form))
+            return render(request, 'core/management/member_team_submission_detail.html', context)
+        log_action(request.user, 'approve_member_team_submission', 'MemberTeamSubmission', submission.id, f'team_id={team.id}')
+        messages.success(request, '队伍申请已审核通过，正式队伍已更新。')
+    elif decision == 'reject':
+        if submission.review_status == MemberTeamSubmission.ReviewStatus.APPROVED:
+            messages.error(request, '已通过的队伍申请不能直接驳回，请发起新的编辑申请。')
+            return redirect('member-team-submission-detail-manage', submission_id=submission.id)
+        submission.review_status = MemberTeamSubmission.ReviewStatus.REJECTED
+        submission.review_note = form.cleaned_data.get('review_note', '')
+        submission.reviewed_by = request.user
+        submission.reviewed_at = timezone.now()
+        submission.save(update_fields=['review_status', 'review_note', 'reviewed_by', 'reviewed_at', 'updated_at'])
+        log_action(request.user, 'reject_member_team_submission', 'MemberTeamSubmission', submission.id)
+        messages.success(request, '队伍申请已驳回。')
+    else:
+        messages.error(request, '无效的审核操作。')
+    return redirect('member-team-submission-detail-manage', submission_id=submission.id)
+
+
+@login_required
 def contest_submission_list_manage(request):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
     selected_status = request.GET.get('status', '').strip()
     query = request.GET.get('q', '').strip()
-    submissions = ContestSubmission.objects.select_related('applicant', 'reviewed_by', 'resolved_contest').prefetch_related('team_members')
+    submissions = ContestSubmission.objects.select_related('applicant', 'reviewed_by', 'resolved_contest', 'linked_member_team').prefetch_related('team_members')
     if selected_status:
         submissions = submissions.filter(review_status=selected_status)
     if query:
@@ -1220,6 +1553,7 @@ def contest_submission_detail_manage(request, submission_id):
             'applicant',
             'applicant__member_profile',
             'reviewed_by',
+            'linked_member_team',
             'resolved_contest',
             'resolved_team',
             'resolved_result',
@@ -1249,6 +1583,7 @@ def contest_submission_review(request, submission_id):
         ContestSubmission.objects.select_related(
             'applicant',
             'applicant__member_profile',
+            'linked_member_team',
             'resolved_result',
             'resolved_result__team',
         ),
@@ -1574,7 +1909,7 @@ def event_list_manage(request):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
     events = (
-        Event.objects.select_related('applicant', 'reviewed_by').prefetch_related('checkin_managers__member_profile')
+        Event.objects.select_related('applicant', 'reviewed_by', 'series').prefetch_related('checkin_managers__member_profile')
         .annotate(checkin_total=Count('checkins'))
         .order_by('review_status', 'start_time')
     )
@@ -1622,7 +1957,11 @@ def event_create(request):
 def event_edit(request, event_id):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
-    event = get_object_or_404(Event.objects.prefetch_related('checkin_managers__member_profile'), pk=event_id)
+    event = get_object_or_404(
+        Event.objects.select_related('series').prefetch_related('checkin_managers__member_profile'),
+        pk=event_id,
+    )
+    previous_series_id = event.series_id
     form = EventForm(request.POST or None, instance=event)
     if request.method == 'POST' and form.is_valid():
         event = form.save(commit=False)
@@ -1630,6 +1969,7 @@ def event_edit(request, event_id):
             event.published_at = timezone.now()
         event.save()
         form.save_m2m()
+        sync_series_completions_for_event_members(event, series_ids=[previous_series_id])
         log_action(request.user, 'edit_event', 'Event', event.id)
         messages.success(request, '活动已更新。')
         return redirect('event-detail-manage', event_id=event.id)
@@ -1648,7 +1988,7 @@ def event_edit(request, event_id):
 @login_required
 def event_detail_manage(request, event_id):
     event = get_object_or_404(
-        Event.objects.select_related('applicant', 'reviewed_by', 'created_by').prefetch_related('checkin_managers__member_profile'),
+        Event.objects.select_related('applicant', 'reviewed_by', 'created_by', 'series').prefetch_related('checkin_managers__member_profile'),
         pk=event_id,
     )
     if not event.can_manage_checkin(request.user):
@@ -1841,6 +2181,7 @@ def event_manual_checkin(request, event_id):
         remark=form.cleaned_data['remark'],
         created_by=request.user,
     )
+    sync_series_completion_for_member(form.member_profile, event.series)
     log_action(
         request.user,
         'manual_checkin',
@@ -1871,6 +2212,7 @@ def event_revoke_checkin(request, event_id, checkin_id):
     if not checkin.remark:
         checkin.remark = '由签到管理员撤销。'
     checkin.save(update_fields=['status', 'remark', 'updated_at'])
+    sync_series_completion_for_member(checkin.member, event.series)
     log_action(
         request.user,
         'revoke_checkin',
@@ -2124,6 +2466,7 @@ def complete_qr_checkin(request, qr_code, redirect_url):
         source_qr_code=qr_code,
         created_by=request.user,
     )
+    sync_series_completion_for_member(profile, event.series)
     log_action(request.user, 'qr_checkin', 'Event', event.id, f'checkin_id={checkin.id}')
     messages.success(request, '扫码签到成功。')
     return redirect(redirect_url)
