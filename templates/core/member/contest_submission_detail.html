@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}奖项申报详情 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}奖项申报详情{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">{{ submission.contest_name }}</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>{{ submission.contest_name }}</h2>
+    <p>申报状态：{{ submission.get_review_status_display }}。提交时间：{{ submission.created_at|date:"Y-m-d H:i" }}</p>
+
+    <div class="stats-row">
+        <div class="stat-chip">
+            <strong>{{ submission.get_review_status_display }}</strong>
+            <span>审核状态</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{{ submission.contest_date|date:"Y-m-d" }}</strong>
+            <span>比赛日期</span>
+        </div>
+        <div class="stat-chip">
+            <strong>{% if submission.resolved_result %}已落库{% else %}未落库{% endif %}</strong>
+            <span>正式记录</span>
+        </div>
+    </div>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'member-contest-submission-list' %}">返回申报列表</a>
+        {% if submission.review_status == 'pending' %}
+            <a class="quick-link button subtle" href="{% url 'member-contest-submission-withdraw' submission.id %}">撤回申报</a>
+        {% endif %}
+        {% if submission.resolved_contest %}
+            <a class="quick-link" href="{% url 'member-competition-profile-public' submission.applicant.member_profile.id %}">查看竞赛档案</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>赛事信息</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>赛事名称：</strong><span class="muted">{{ submission.contest_name }}</span></div>
+            <div><strong>赛事系列：</strong><span class="muted">{{ submission.get_contest_series_display }}</span></div>
+            <div><strong>赛季/学年：</strong><span class="muted">{{ submission.contest_season|default:"未填写" }}</span></div>
+            <div><strong>阶段：</strong><span class="muted">{{ submission.contest_stage|default:"未填写" }}</span></div>
+            <div><strong>比赛日期：</strong><span class="muted">{{ submission.contest_date|date:"Y-m-d" }}</span></div>
+            <div><strong>主办方：</strong><span class="muted">{{ submission.organizer|default:"未填写" }}</span></div>
+            <div><strong>赛事级别：</strong><span class="muted">{{ submission.get_contest_level_display }}</span></div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>队伍与成绩</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>队伍名称：</strong><span class="muted">{{ submission.team_name|default:"未填写" }}</span></div>
+            <div><strong>关联队伍：</strong><span class="muted">{% if submission.linked_member_team %}{{ submission.linked_member_team.name }}{% else %}未选择{% endif %}</span></div>
+            <div><strong>队内成员：</strong><span class="muted">
+                {% for member in submission.team_members.all %}
+                    {{ member.real_name }}{% if not forloop.last %}、{% endif %}
+                {% empty %}
+                    无
+                {% endfor %}
+            </span></div>
+            <div><strong>未建档队友：</strong><span class="muted">{{ submission.external_teammates|default:"无" }}</span></div>
+            <div><strong>奖项类型：</strong><span class="muted">{{ submission.get_award_type_display }}</span></div>
+            <div><strong>奖项展示文案：</strong><span class="muted">{{ submission.award_label|default:"未填写" }}</span></div>
+            <div><strong>名次描述：</strong><span class="muted">{{ submission.rank_label|default:"未填写" }}</span></div>
+            <div><strong>成绩层级：</strong><span class="muted">{{ submission.get_result_tier_display }}</span></div>
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>补充信息</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>证据链接：</strong><span class="muted">{% if submission.evidence_url %}<a href="{{ submission.evidence_url }}" target="_blank">查看证据</a>{% else %}未提供{% endif %}</span></div>
+            <div><strong>补充说明：</strong><span class="muted">{{ submission.submission_note|default:"无" }}</span></div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>审核信息</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>审核状态：</strong><span class="badge {% if submission.review_status == 'approved' %}live{% elif submission.review_status == 'pending' %}warn{% elif submission.review_status == 'withdrawn' %}dim{% else %}dim{% endif %}">{{ submission.get_review_status_display }}</span></div>
+            <div><strong>审核人：</strong><span class="muted">{% if submission.reviewed_by %}{{ submission.reviewed_by.admin_profile.display_name|default:submission.reviewed_by.username }}{% else %}暂未审核{% endif %}</span></div>
+            <div><strong>审核说明：</strong><span class="muted">{{ submission.review_note|default:"暂无" }}</span></div>
+            <div><strong>正式赛事：</strong><span class="muted">{% if submission.resolved_contest %}{{ submission.resolved_contest.name }}{% else %}尚未生成{% endif %}</span></div>
+            <div><strong>正式成绩：</strong><span class="muted">{% if submission.resolved_result %}{{ submission.resolved_result.display_award_label }}{% else %}尚未生成{% endif %}</span></div>
+        </div>
+    </article>
+</section>
+{% endblock %}

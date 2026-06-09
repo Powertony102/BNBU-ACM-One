@@ -27,6 +27,7 @@
                 <th>审核状态</th>
                 <th>审核说明</th>
                 <th>落库结果</th>
+                <th>操作</th>
             </tr>
         </thead>
         <tbody>
@@ -59,10 +60,16 @@
                             <span class="muted">尚未落库</span>
                         {% endif %}
                     </td>
+                    <td>
+                        <a href="{% url 'member-contest-submission-detail' submission.id %}">查看详情</a>
+                        {% if submission.review_status == 'pending' %}
+                            <a href="{% url 'member-contest-submission-withdraw' submission.id %}" class="button subtle" style="margin-left: 8px;">撤回</a>
+                        {% endif %}
+                    </td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="5">你还没有提交赛事奖项申报。</td>
+                    <td colspan="6">你还没有提交赛事奖项申报。</td>
                 </tr>
             {% endfor %}
         </tbody>

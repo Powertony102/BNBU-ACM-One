@@ -565,6 +565,7 @@ class ContestSubmission(models.Model):
         PENDING = 'pending', '待审核'
         APPROVED = 'approved', '已通过'
         REJECTED = 'rejected', '已驳回'
+        WITHDRAWN = 'withdrawn', '已撤回'
 
     applicant = models.ForeignKey(User, on_delete=models.CASCADE, related_name='contest_submissions')
     contest_name = models.CharField(max_length=200)

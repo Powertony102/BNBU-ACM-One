@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}撤回申报 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}撤回申报{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">确认撤回赛事奖项申报</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>确认撤回申报</h2>
+    <p>你确定要撤回以下赛事奖项申报吗？撤回后，该申报将不再显示在待审核列表中，且无法恢复。</p>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>申报信息</h3>
+        </div>
+        <div class="stack" style="gap: 10px;">
+            <div><strong>赛事名称：</strong><span class="muted">{{ submission.contest_name }}</span></div>
+            <div><strong>比赛日期：</strong><span class="muted">{{ submission.contest_date|date:"Y-m-d" }}</span></div>
+            <div><strong>队伍名称：</strong><span class="muted">{{ submission.team_name|default:"未填写" }}</span></div>
+            <div><strong>提交时间：</strong><span class="muted">{{ submission.created_at|date:"Y-m-d H:i" }}</span></div>
+        </div>
+        <form method="post" style="margin-top: 20px;">
+            {% csrf_token %}
+            <div class="quick-links">
+                <button type="submit" class="button subtle">确认撤回</button>
+                <a class="quick-link" href="{% url 'member-contest-submission-detail' submission.id %}">取消</a>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

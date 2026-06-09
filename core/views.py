@@ -1297,6 +1297,51 @@ def member_contest_submission_apply(request):
 
 
 @login_required
+def member_contest_submission_detail(request, submission_id):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    submission = get_object_or_404(
+        ContestSubmission.objects.select_related(
+            'reviewed_by', 'resolved_contest', 'resolved_result', 'linked_member_team'
+        ).prefetch_related('team_members'),
+        pk=submission_id,
+        applicant=request.user,
+    )
+    return render(
+        request,
+        'core/member/contest_submission_detail.html',
+        {
+            'submission': submission,
+        },
+    )
+
+
+@login_required
+def member_contest_submission_withdraw(request, submission_id):
+    if not require_member(request.user):
+        return HttpResponseForbidden('仅队员可访问。')
+    submission = get_object_or_404(
+        ContestSubmission,
+        pk=submission_id,
+        applicant=request.user,
+        review_status=ContestSubmission.ReviewStatus.PENDING,
+    )
+    if request.method == 'POST':
+        submission.review_status = ContestSubmission.ReviewStatus.WITHDRAWN
+        submission.save()
+        log_action(request.user, 'withdraw_contest_submission', 'ContestSubmission', submission.id)
+        messages.success(request, '申报已成功撤回。')
+        return redirect('member-contest-submission-list')
+    return render(
+        request,
+        'core/member/contest_submission_confirm_withdraw.html',
+        {
+            'submission': submission,
+        },
+    )
+
+
+@login_required
 def member_star_center(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
@@ -1709,6 +1754,8 @@ def contest_submission_review(request, submission_id):
         ),
         pk=submission_id,
     )
+    if submission.review_status == ContestSubmission.ReviewStatus.WITHDRAWN:
+        return HttpResponseForbidden('该申报已撤回，无法审核。')
     if not can_review_contest_submission(request.user, submission):
         return HttpResponseForbidden('仅管理员可审核赛事奖项申报。')
     applicant_profile = getattr(submission.applicant, 'member_profile', None)
