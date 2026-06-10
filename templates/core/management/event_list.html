@@ -374,11 +374,11 @@
         </div>
         <div class="stat-chip">
             <strong>{{ recent_event_total }}</strong>
-            <span>近 {{ recent_window_days }} 天活动</span>
+            <span>昨天 + 今天 + 明天的活动</span>
         </div>
     </div>
     <div class="event-filter-note">
-        当前主表仅展示开始日期位于 {{ recent_start_date|date:"Y-m-d" }} 至 {% now "Y-m-d" %} 的活动。
+        当前主表仅展示开始日期位于 {{ recent_start_date|date:"Y-m-d" }} 至 {{ recent_end_date|date:"Y-m-d" }} 的活动。
         更早或更晚的活动可通过“搜索活动”弹窗按标题快速查找。
     </div>
 </section>

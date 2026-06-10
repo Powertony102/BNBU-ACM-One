@@ -178,15 +178,15 @@
         <a class="button" href="{% url 'member-event-apply' %}">申请活动</a>
     </div>
     <div class="member-event-note">
-        当前页面仅展示开始日期位于 {{ recent_start_date|date:"Y-m-d" }} 至 {% now "Y-m-d" %} 的活动，
-        以及最近 {{ recent_window_days }} 天提交的活动申请。其他记录可通过“搜索活动”弹窗按标题继续查找。
+        当前页面仅展示开始日期位于 {{ recent_start_date|date:"Y-m-d" }} 至 {{ recent_end_date|date:"Y-m-d" }} 的活动，
+        以及同一时间窗口内的活动申请。其他记录可通过“搜索活动”弹窗按标题继续查找。
     </div>
 </section>
 
 <section class="card">
     <div class="card-header">
         <h3>全部活动</h3>
-        <span class="card-meta">近 {{ recent_window_days }} 天内已审核通过的活动 · {{ recent_event_total }} 条</span>
+        <span class="card-meta">昨天 + 今天 + 明天内已审核通过的活动 · {{ recent_event_total }} 条</span>
     </div>
     <table>
         <thead>
@@ -213,9 +213,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr>
-                    <td colspan="4">近 {{ recent_window_days }} 天内暂无活动，可通过“搜索活动”查找其他记录。</td>
-                </tr>
+                <tr><td colspan="4">昨天、今天和明天范围内暂无活动，可通过“搜索活动”查找其他记录。</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -224,7 +222,7 @@
 <section class="card" style="margin-top: 18px;">
     <div class="card-header">
         <h3>我的活动申请</h3>
-        <span class="card-meta">近 {{ recent_window_days }} 天提交的申请 · {{ recent_application_total }} 条</span>
+        <span class="card-meta">昨天 + 今天 + 明天的申请活动 · {{ recent_application_total }} 条</span>
     </div>
     <table>
         <thead>
@@ -260,7 +258,7 @@
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="5">近 {{ recent_window_days }} 天内你还没有提交活动申请，可通过“搜索活动”查看更早记录。</td>
+                    <td colspan="5">昨天、今天和明天范围内没有你的申请活动，可通过“搜索活动”查看其他记录。</td>
                 </tr>
             {% endfor %}
         </tbody>

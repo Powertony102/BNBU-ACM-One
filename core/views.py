@@ -1161,7 +1161,9 @@ def member_event_list(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
     recent_window_days = 3
-    recent_start_date = timezone.localdate() - timedelta(days=recent_window_days - 1)
+    current_date = timezone.localdate()
+    recent_start_date = current_date - timedelta(days=1)
+    recent_end_date = current_date + timedelta(days=1)
     all_events = (
         Event.objects.filter(review_status=Event.ReviewStatus.APPROVED)
         .exclude(status=Event.Status.CANCELED)
@@ -1169,7 +1171,7 @@ def member_event_list(request):
     )
     events = all_events.filter(
         start_time__date__gte=recent_start_date,
-        start_time__date__lte=timezone.localdate(),
+        start_time__date__lte=recent_end_date,
     )
     all_applications = (
         Event.objects.filter(applicant=request.user)
@@ -1177,8 +1179,8 @@ def member_event_list(request):
         .order_by('-created_at')
     )
     my_applications = all_applications.filter(
-        created_at__date__gte=recent_start_date,
-        created_at__date__lte=timezone.localdate(),
+        start_time__date__gte=recent_start_date,
+        start_time__date__lte=recent_end_date,
     )
     return render(
         request,
@@ -1188,6 +1190,7 @@ def member_event_list(request):
             'my_applications': my_applications,
             'recent_window_days': recent_window_days,
             'recent_start_date': recent_start_date,
+            'recent_end_date': recent_end_date,
             'recent_event_total': events.count(),
             'recent_application_total': my_applications.count(),
             'event_search_choices': build_member_event_search_choices(all_events),
@@ -2420,14 +2423,16 @@ def event_list_manage(request):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
     recent_window_days = 3
-    recent_start_date = timezone.localdate() - timedelta(days=recent_window_days - 1)
+    current_date = timezone.localdate()
+    recent_start_date = current_date - timedelta(days=1)
+    recent_end_date = current_date + timedelta(days=1)
     base_events = Event.objects.select_related('applicant', 'reviewed_by', 'series').prefetch_related(
         'checkin_managers__member_profile'
     )
     events = (
         base_events.filter(
             start_time__date__gte=recent_start_date,
-            start_time__date__lte=timezone.localdate(),
+            start_time__date__lte=recent_end_date,
         )
         .annotate(checkin_total=Count('checkins'))
         .order_by('-start_time', '-id')
@@ -2444,6 +2449,7 @@ def event_list_manage(request):
             'pending_application_total': Event.objects.filter(review_status=Event.ReviewStatus.PENDING).count(),
             'recent_window_days': recent_window_days,
             'recent_start_date': recent_start_date,
+            'recent_end_date': recent_end_date,
             'recent_event_total': events.count(),
             'event_search_choices': build_event_search_choices(searchable_events),
         },

@@ -804,10 +804,10 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertEqual(event.created_by, self.member_user)
         self.assertEqual(event.review_status, Event.ReviewStatus.PENDING)
         self.assertEqual(event.status, Event.Status.DRAFT)
-        self.assertContains(response, '队员专题分享')
-        self.assertContains(response, '待审核')
+        self.assertContains(response, '搜索活动')
+        self.assertContains(response, '昨天 + 今天 + 明天的申请活动')
 
-    def test_member_event_list_only_shows_recent_three_days_for_events_and_recently_created_applications(self):
+    def test_member_event_list_only_shows_yesterday_today_and_tomorrow_for_events_and_applications(self):
         now = timezone.now()
         recent_event = Event.objects.create(
             title='近期公开活动',
@@ -844,12 +844,12 @@ class EventApplicationWorkflowTests(TestCase):
         recent_application = Event.objects.create(
             title='近期活动申请',
             event_type=Event.EventType.SHARING,
-            description='近三天内申请。',
+            description='窗口内申请。',
             location='Lab 803',
-            start_time=now - timedelta(days=1),
-            end_time=now - timedelta(days=1) + timedelta(hours=2),
-            checkin_start_time=now - timedelta(days=1, minutes=20),
-            checkin_end_time=now - timedelta(days=1) + timedelta(hours=1),
+            start_time=now + timedelta(days=1),
+            end_time=now + timedelta(days=1, hours=2),
+            checkin_start_time=now + timedelta(days=1, minutes=-20),
+            checkin_end_time=now + timedelta(days=1, hours=1),
             status=Event.Status.DRAFT,
             applicant=self.member_user,
             review_status=Event.ReviewStatus.PENDING,
@@ -869,9 +869,6 @@ class EventApplicationWorkflowTests(TestCase):
             review_status=Event.ReviewStatus.REJECTED,
             created_by=self.member_user,
         )
-        Event.objects.filter(pk=old_application.pk).update(created_at=now - timedelta(days=6))
-        old_application.refresh_from_db()
-
         self.client.login(username='2430026001', password='MemberPassword2026!')
         response = self.client.get(reverse('member-event-list'))
 
@@ -880,8 +877,8 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertQuerysetEqual(response.context['my_applications'], [recent_application], transform=lambda event: event)
         self.assertEqual(response.context['recent_event_total'], 1)
         self.assertEqual(response.context['recent_application_total'], 1)
-        self.assertContains(response, '近 3 天内已审核通过的活动')
-        self.assertContains(response, '近 3 天提交的申请')
+        self.assertContains(response, '昨天 + 今天 + 明天内已审核通过的活动')
+        self.assertContains(response, '昨天 + 今天 + 明天的申请活动')
         self.assertNotIn(old_event.id, [event.id for event in response.context['events']])
         self.assertNotIn(old_application.id, [event.id for event in response.context['my_applications']])
 
@@ -917,9 +914,6 @@ class EventApplicationWorkflowTests(TestCase):
             review_status=Event.ReviewStatus.REJECTED,
             created_by=self.member_user,
         )
-        Event.objects.filter(pk=my_application.pk).update(created_at=now - timedelta(days=7))
-        my_application.refresh_from_db()
-
         self.client.login(username='2430026001', password='MemberPassword2026!')
         response = self.client.get(reverse('member-event-list'))
 
@@ -1027,8 +1021,8 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
         list_response = self.client.get(reverse('member-event-list'))
-        self.assertContains(list_response, '已驳回')
-        self.assertContains(list_response, '时间安排不够清晰，请补充后再申请。')
+        self.assertContains(list_response, '搜索活动')
+        self.assertContains(list_response, '可按标题搜索全部已审核活动，以及你提交过的全部活动申请')
 
     def test_approved_applicant_can_manual_checkin_and_revoke(self):
         event = self.create_pending_application()
@@ -1198,7 +1192,7 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertContains(response, '选择所属系列')
         self.assertNotContains(response, '<select name="series"', html=False)
 
-    def test_event_list_manage_only_shows_recent_three_days(self):
+    def test_event_list_manage_only_shows_yesterday_today_and_tomorrow(self):
         now = timezone.now()
         visible_today = Event.objects.create(
             title='今日活动',
@@ -1232,15 +1226,15 @@ class EventApplicationWorkflowTests(TestCase):
             created_by=self.admin_user,
             published_at=now,
         )
-        visible_two_days_ago = Event.objects.create(
-            title='前天活动',
+        visible_tomorrow = Event.objects.create(
+            title='明天活动',
             event_type=Event.EventType.LECTURE,
-            description='应在近三天列表中显示。',
+            description='应在窗口内显示。',
             location='Lab 703',
-            start_time=now - timedelta(days=2),
-            end_time=now - timedelta(days=2) + timedelta(hours=2),
-            checkin_start_time=now - timedelta(days=2, minutes=20),
-            checkin_end_time=now - timedelta(days=2) + timedelta(hours=1),
+            start_time=now + timedelta(days=1),
+            end_time=now + timedelta(days=1, hours=2),
+            checkin_start_time=now + timedelta(days=1, minutes=-20),
+            checkin_end_time=now + timedelta(days=1, hours=1),
             status=Event.Status.PUBLISHED,
             review_status=Event.ReviewStatus.APPROVED,
             reviewed_by=self.admin_user,
@@ -1264,15 +1258,15 @@ class EventApplicationWorkflowTests(TestCase):
             created_by=self.admin_user,
             published_at=now,
         )
-        hidden_future = Event.objects.create(
-            title='未来活动',
+        hidden_past = Event.objects.create(
+            title='前天活动',
             event_type=Event.EventType.SHARING,
-            description='不应在近三天列表中显示。',
+            description='不应在当前窗口中显示。',
             location='Lab 705',
-            start_time=now + timedelta(days=1),
-            end_time=now + timedelta(days=1, hours=2),
-            checkin_start_time=now + timedelta(days=1, minutes=-20),
-            checkin_end_time=now + timedelta(days=1, hours=1),
+            start_time=now - timedelta(days=2),
+            end_time=now - timedelta(days=2) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=2, minutes=20),
+            checkin_end_time=now - timedelta(days=2) + timedelta(hours=1),
             status=Event.Status.DRAFT,
             review_status=Event.ReviewStatus.APPROVED,
             reviewed_by=self.admin_user,
@@ -1286,14 +1280,14 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertQuerysetEqual(
             response.context['events'],
-            [visible_today, visible_yesterday, visible_two_days_ago],
+            [visible_tomorrow, visible_today, visible_yesterday],
             transform=lambda event: event,
         )
         self.assertEqual(response.context['recent_event_total'], 3)
         self.assertContains(response, '搜索活动')
-        self.assertContains(response, '近 3 天活动')
+        self.assertContains(response, '昨天 + 今天 + 明天的活动')
         self.assertNotIn(hidden_old.id, [event.id for event in response.context['events']])
-        self.assertNotIn(hidden_future.id, [event.id for event in response.context['events']])
+        self.assertNotIn(hidden_past.id, [event.id for event in response.context['events']])
 
     def test_event_list_manage_search_modal_includes_all_event_titles(self):
         now = timezone.now()
