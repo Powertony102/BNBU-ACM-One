@@ -7,14 +7,57 @@
 {% block content %}
 <section class="page-hero">
     <h2>{{ page_title }}</h2>
-    <p>填写赛事系列、级别和时间信息，系统会基于级别权重参与后续 Rating 计算。</p>
+    <p>填写赛事系列、级别和时间信息。若勾选“跟随规则管理中的默认权重”，系统会自动预加载当前级别的权重，并在全局规则调整时同步更新这场赛事。</p>
 </section>
 
 <section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>权重说明</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            {% for item in contest_level_weights %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">{{ item.label }}</div>
+                        <div class="event-item-meta">当前规则中心中的默认权重。</div>
+                    </div>
+                    <span class="badge">{{ item.weight }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
     <article class="card">
         <form method="post">
             {% csrf_token %}
-            {{ form.as_p }}
+            <p>{{ form.name.label_tag }}{{ form.name }}{% for error in form.name.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.series.label_tag }}{{ form.series }}{% for error in form.series.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.season.label_tag }}{{ form.season }}{% for error in form.season.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.stage.label_tag }}{{ form.stage }}{% for error in form.stage.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.contest_date.label_tag }}{{ form.contest_date }}{% for error in form.contest_date.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.organizer.label_tag }}{{ form.organizer }}{% for error in form.organizer.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.level.label_tag }}{{ form.level }}{% for error in form.level.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>
+                {{ form.use_default_weight }}
+                <label for="{{ form.use_default_weight.id_for_label }}" style="display: inline;">{{ form.use_default_weight.label }}</label>
+                {% if form.use_default_weight.help_text %}<small>{{ form.use_default_weight.help_text }}</small>{% endif %}
+                {% for error in form.use_default_weight.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+            </p>
+            <p>
+                {{ form.weight.label_tag }}
+                {{ form.weight }}
+                <small id="weight-help">
+                    {% if form.instance.use_default_weight or not form.instance.pk %}
+                        当前将跟随所选赛事级别的默认权重。
+                    {% else %}
+                        当前正在使用这场赛事自己的手动权重。
+                    {% endif %}
+                </small>
+                {% for error in form.weight.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+            </p>
+            <p>{{ form.status.label_tag }}{{ form.status }}{% for error in form.status.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.description.label_tag }}{{ form.description }}{% if form.description.help_text %}<small>{{ form.description.help_text }}</small>{% endif %}{% for error in form.description.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
             <div class="quick-links" style="margin-top: 16px;">
                 <button type="submit">保存赛事</button>
                 <a class="quick-link" href="{% if contest %}{% url 'contest-detail-manage' contest.id %}{% else %}{% url 'contest-list-manage' %}{% endif %}">返回</a>
@@ -22,4 +65,37 @@
         </form>
     </article>
 </section>
+
+<script>
+    (() => {
+        const weightMap = JSON.parse('{{ contest_level_weights_json|escapejs }}');
+        const levelInput = document.getElementById('id_level');
+        const useDefaultInput = document.getElementById('id_use_default_weight');
+        const weightInput = document.getElementById('id_weight');
+        const weightHelp = document.getElementById('weight-help');
+
+        function syncWeightFromRule() {
+            if (!levelInput || !useDefaultInput || !weightInput) {
+                return;
+            }
+            const level = levelInput.value;
+            if (useDefaultInput.checked && weightMap[level]) {
+                weightInput.value = weightMap[level];
+                weightInput.readOnly = true;
+                weightHelp.textContent = '当前将跟随所选赛事级别的默认权重。切换级别时会自动更新。';
+            } else {
+                weightInput.readOnly = false;
+                weightHelp.textContent = '当前正在使用这场赛事自己的手动权重。';
+            }
+        }
+
+        if (levelInput) {
+            levelInput.addEventListener('change', syncWeightFromRule);
+        }
+        if (useDefaultInput) {
+            useDefaultInput.addEventListener('change', syncWeightFromRule);
+        }
+        syncWeightFromRule();
+    })();
+</script>
 {% endblock %}

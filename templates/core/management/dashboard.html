@@ -52,6 +52,9 @@
         <a class="quick-link" href="{% url 'contest-list-manage' %}">赛事管理</a>
         <a class="quick-link" href="{% url 'contest-submission-list-manage' %}">审核奖项申报</a>
         <a class="quick-link" href="{% url 'management-star-analytics' %}">查看 Star 统计</a>
+        {% if request.user.role == 'super_admin' %}
+            <a class="quick-link" href="{% url 'management-rule-overview' %}">规则管理</a>
+        {% endif %}
     </div>
 </section>
 

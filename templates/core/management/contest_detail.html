@@ -7,7 +7,7 @@
 {% block content %}
 <section class="page-hero">
     <h2>{{ contest.name }}</h2>
-    <p>{{ contest.contest_date|date:"Y-m-d" }}{% if contest.stage %} · {{ contest.stage }}{% endif %} · {{ contest.get_level_display }} · 权重 {{ contest.weight }}</p>
+    <p>{{ contest.contest_date|date:"Y-m-d" }}{% if contest.stage %} · {{ contest.stage }}{% endif %} · {{ contest.get_level_display }} · 权重 {{ contest.weight }} · {{ contest_weight_source_label }}</p>
 
     <div class="quick-links">
         <a class="quick-link" href="{% url 'contest-edit' contest.id %}">编辑赛事</a>
@@ -40,6 +40,7 @@
             <div><strong>赛事系列：</strong><span class="muted">{{ contest.get_series_display }}</span></div>
             <div><strong>赛季：</strong><span class="muted">{{ contest.season|default:"未填写" }}</span></div>
             <div><strong>主办方：</strong><span class="muted">{{ contest.organizer|default:"未填写" }}</span></div>
+            <div><strong>权重来源：</strong><span class="muted">{{ contest_weight_source_label }}</span></div>
             <div><strong>说明：</strong><span class="muted">{{ contest.description|default:"暂无说明" }}</span></div>
         </div>
     </article>

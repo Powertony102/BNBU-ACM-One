@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}规则总览 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}规则总览{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">统一查看 Star 与 Rating 的当前生效规则</div>{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+    <h2>规则管理</h2>
+    <p>这里汇总当前正在生效的 Star 与 Rating 规则，方便超级管理员先看影响范围，再进入对应页面微调参数。</p>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'star-rules-manage' %}">编辑 Star 规则</a>
+        <a class="quick-link" href="{% url 'rating-rules-manage' %}">编辑 Rating 规则</a>
+        <a class="quick-link" href="{% url 'management-dashboard' %}">返回管理首页</a>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card">
+        <div class="card-header">
+            <h3>Star 规则</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">近期窗口</div>
+                    <div class="event-item-meta">最近 {{ star_recent_window_days }} 天内有活动签到或赛事参与，即可点亮 ACM Star。</div>
+                </div>
+                <span class="badge live">{{ star_recent_window_days }} 天</span>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">二维码总有效期</div>
+                    <div class="event-item-meta">用于控制签到入口一轮生成后的最长有效时间。</div>
+                </div>
+                <span class="badge">{{ qr_code_expire_minutes }} 分钟</span>
+            </div>
+        </div>
+    </article>
+
+    <article class="card soft">
+        <div class="card-header">
+            <h3>Rating 公式摘要</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">基础分</div>
+                    <div class="event-item-meta">每条正式赛事成绩在奖项加分前，先计入基础参与分。</div>
+                </div>
+                <span class="badge warn">{{ base_participation_score }}</span>
+            </div>
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">计算口径</div>
+                    <div class="event-item-meta">`(基础分 + 奖项加分 + 人工加分) × 赛事权重 × 时间衰减`</div>
+                </div>
+            </div>
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card">
+        <div class="card-header">
+            <h3>赛事级别权重</h3>
+        </div>
+        <div class="feed-list">
+            {% for item in contest_level_weights %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ item.label }}</div>
+                        <div class="feed-item-meta">该级别赛事默认使用的 Rating 权重。</div>
+                    </div>
+                    <span class="badge">{{ item.weight }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="card">
+        <div class="card-header">
+            <h3>奖项加分</h3>
+        </div>
+        <div class="feed-list">
+            {% for item in award_bonus_rules %}
+                <div class="feed-item">
+                    <div>
+                        <div class="feed-item-title">{{ item.label }}</div>
+                        <div class="feed-item-meta">当前奖项层级对应的默认加分。</div>
+                    </div>
+                    <span class="badge live">+{{ item.bonus }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="grid" style="margin-top: 18px;">
+    <article class="card" style="grid-column: span 2;">
+        <div class="card-header">
+            <h3>定级阈值预览</h3>
+            <a class="card-meta" href="{% url 'rating-rules-manage' %}">调整阈值</a>
+        </div>
+        <div class="feed-list">
+            {% for level in level_ranges %}
+                <div class="feed-item" style="border-left: 4px solid {{ level.color }};">
+                    <div>
+                        <div class="feed-item-title" style="color: {{ level.color }};">{{ level.label }} · {{ level.title }}</div>
+                        <div class="feed-item-meta">Rating 区间：{{ level.range_text }}</div>
+                    </div>
+                    <span class="badge {{ level.tone }}">{{ level.slug }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}

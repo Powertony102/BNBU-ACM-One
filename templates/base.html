@@ -1146,7 +1146,27 @@
                             </details>
 
                             {% if request.user.role == 'super_admin' %}
-                                <details class="nav-accordion" {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' or request.resolver_match.url_name == 'system-settings-manage' or request.resolver_match.url_name == 'audit-log-list' %}open{% endif %}>
+                                <details class="nav-accordion" {% if request.resolver_match.url_name == 'management-rule-overview' or request.resolver_match.url_name == 'star-rules-manage' or request.resolver_match.url_name == 'rating-rules-manage' or request.resolver_match.url_name == 'system-settings-manage' %}open{% endif %}>
+                                    <summary class="nav-accordion-summary">
+                                        <span class="nav-accordion-title"><span class="nav-accordion-dot"></span><span>规则管理</span></span>
+                                        <span class="nav-accordion-chevron">›</span>
+                                    </summary>
+                                    <div class="nav-accordion-body">
+                                        <nav class="nav-list">
+                                            <a class="nav-item {% if request.resolver_match.url_name == 'management-rule-overview' %}active{% endif %}" href="{% url 'management-rule-overview' %}">
+                                                <span class="nav-item-label"><span class="nav-bullet"></span><span>规则总览</span></span>
+                                            </a>
+                                            <a class="nav-item {% if request.resolver_match.url_name == 'star-rules-manage' or request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'star-rules-manage' %}">
+                                                <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 规则</span></span>
+                                            </a>
+                                            <a class="nav-item {% if request.resolver_match.url_name == 'rating-rules-manage' %}active{% endif %}" href="{% url 'rating-rules-manage' %}">
+                                                <span class="nav-item-label"><span class="nav-bullet"></span><span>Rating 规则</span></span>
+                                            </a>
+                                        </nav>
+                                    </div>
+                                </details>
+
+                                <details class="nav-accordion" {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' or request.resolver_match.url_name == 'audit-log-list' %}open{% endif %}>
                                     <summary class="nav-accordion-summary">
                                         <span class="nav-accordion-title"><span class="nav-accordion-dot"></span><span>系统治理</span></span>
                                         <span class="nav-accordion-chevron">›</span>
@@ -1155,9 +1175,6 @@
                                         <nav class="nav-list">
                                             <a class="nav-item {% if request.resolver_match.url_name == 'admin-list-manage' or request.resolver_match.url_name == 'admin-edit' %}active{% endif %}" href="{% url 'admin-list-manage' %}">
                                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>管理员管理</span></span>
-                                            </a>
-                                            <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
-                                                <span class="nav-item-label"><span class="nav-bullet"></span><span>系统设置</span></span>
                                             </a>
                                             <a class="nav-item {% if request.resolver_match.url_name == 'audit-log-list' %}active{% endif %}" href="{% url 'audit-log-list' %}">
                                                 <span class="nav-item-label"><span class="nav-bullet"></span><span>审计日志</span></span>
@@ -1178,8 +1195,8 @@
                                             <span class="nav-item-label"><span class="nav-bullet"></span><span>二维码入口</span></span>
                                             <span class="nav-note">已接通</span>
                                         </a>
-                                        <a class="nav-item {% if request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'system-settings-manage' %}">
-                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>Star 规则</span></span>
+                                        <a class="nav-item {% if request.resolver_match.url_name == 'management-rule-overview' or request.resolver_match.url_name == 'star-rules-manage' or request.resolver_match.url_name == 'rating-rules-manage' or request.resolver_match.url_name == 'system-settings-manage' %}active{% endif %}" href="{% url 'management-rule-overview' %}">
+                                            <span class="nav-item-label"><span class="nav-bullet"></span><span>规则中心</span></span>
                                             <span class="nav-note">已接通</span>
                                         </a>
                                     </div>

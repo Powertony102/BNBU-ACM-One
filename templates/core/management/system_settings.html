@@ -1,25 +1,25 @@
 {% extends "base.html" %}
 
-{% block title %}系统设置 | One BNBU-ACM{% endblock %}
-{% block topbar_title %}系统设置{% endblock %}
-{% block topbar_subtitle %}<div class="topbar-subtitle">原型级业务参数</div>{% endblock %}
+{% block title %}Star 规则 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}Star 规则{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">近期活跃判定与签到入口时效</div>{% endblock %}
 
 {% block content %}
 <section class="page-hero">
-    <h2>系统设置</h2>
-    <p>这里维护原型阶段最重要的全局参数，包括 ACM Star 判定窗口和动态二维码签到入口的总有效期。</p>
+    <h2>Star 与签到规则</h2>
+    <p>这里集中维护 ACM Star 的近期判定窗口，以及签到二维码入口的总有效期。所有输入框都会预加载当前正在生效的数值。</p>
 </section>
 
 <section class="grid">
     <article class="card soft">
         <div class="card-header">
-            <h3>参数说明</h3>
+            <h3>当前用法</h3>
         </div>
         <div class="stack" style="gap: 12px;">
             <div class="event-item">
                 <div>
                     <div class="event-item-title">ACM Star 近期窗口</div>
-                    <div class="event-item-meta">控制多少天内有有效签到时，队员首页的 Star 会保持点亮。</div>
+                    <div class="event-item-meta">控制多少天内有有效签到或赛事参与时，队员首页的 Star 会保持点亮。</div>
                 </div>
             </div>
             <div class="event-item">
@@ -33,12 +33,27 @@
 
     <article class="card">
         <div class="card-header">
-            <h3>参数编辑</h3>
+            <h3>规则编辑</h3>
         </div>
         <form method="post">
             {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit">保存系统设置</button>
+            <p>
+                {{ form.star_recent_window_days.label_tag }}
+                {{ form.star_recent_window_days }}
+                {% if form.star_recent_window_days.help_text %}<small>{{ form.star_recent_window_days.help_text }}</small>{% endif %}
+                {% for error in form.star_recent_window_days.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+            </p>
+            <p>
+                {{ form.qr_code_expire_minutes.label_tag }}
+                {{ form.qr_code_expire_minutes }}
+                {% if form.qr_code_expire_minutes.help_text %}<small>{{ form.qr_code_expire_minutes.help_text }}</small>{% endif %}
+                {% for error in form.qr_code_expire_minutes.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+            </p>
+            <div class="quick-links" style="margin-top: 16px;">
+                <button type="submit">保存 Star 规则</button>
+                <a class="quick-link" href="{% url 'management-rule-overview' %}">返回规则总览</a>
+                <a class="quick-link" href="{% url 'rating-rules-manage' %}">去看 Rating 规则</a>
+            </div>
         </form>
     </article>
 </section>

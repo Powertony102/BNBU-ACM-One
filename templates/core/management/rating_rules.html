@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Rating 规则 | One BNBU-ACM{% endblock %}
+{% block topbar_title %}Rating 规则{% endblock %}
+{% block topbar_subtitle %}<div class="topbar-subtitle">赛事权重、奖项加分与定级阈值</div>{% endblock %}
+
+{% block content %}
+<style>
+    .rule-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+    }
+
+    .rule-card {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 18px;
+        padding: 16px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 248, 251, 0.98));
+    }
+
+    .rule-card h4 {
+        margin: 0 0 6px;
+        font-size: 16px;
+    }
+
+    .rule-card p {
+        margin: 0 0 12px;
+        color: #667085;
+        font-size: 13px;
+    }
+
+    .rule-card label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+    }
+
+    .rule-card input {
+        width: 100%;
+    }
+
+    .rule-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+        color: #475467;
+    }
+
+    .level-card {
+        border-width: 2px;
+    }
+
+    .level-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .level-range {
+        color: #344054;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .rule-errors {
+        margin: 0 0 16px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: #fef3f2;
+        color: #b42318;
+    }
+</style>
+
+<section class="page-hero">
+    <h2>Rating 规则管理</h2>
+    <p>这里维护赛事级别权重、奖项加分和 Rating 定级阈值。所有输入框都会预加载当前正在生效的规则；保存后系统会同步更新跟随默认权重的赛事，并全量重算成员竞赛档案。</p>
+
+    <div class="quick-links">
+        <a class="quick-link" href="{% url 'management-rule-overview' %}">返回规则总览</a>
+        <a class="quick-link" href="{% url 'contest-list-manage' %}">查看赛事管理</a>
+    </div>
+</section>
+
+<form method="post">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="rule-errors">
+            {% for error in form.non_field_errors %}
+                <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <section class="grid">
+        <article class="card soft">
+            <div class="card-header">
+                <h3>公式说明</h3>
+            </div>
+            <div class="stack" style="gap: 12px;">
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">当前公式</div>
+                        <div class="event-item-meta">`(基础分 + 奖项加分 + 人工加分) × 赛事权重 × 时间衰减`</div>
+                    </div>
+                </div>
+                <p>
+                    {{ form.base_participation_score.label_tag }}
+                    {{ form.base_participation_score }}
+                    {% for error in form.base_participation_score.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+                </p>
+            </div>
+        </article>
+
+        <article class="card">
+            <div class="card-header">
+                <h3>Use Cases</h3>
+            </div>
+            <div class="stack" style="gap: 12px;">
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">赛季开始前调权重</div>
+                        <div class="event-item-meta">当你希望“国家级/区域级/校级”赛事的影响力更符合团队共识时，从这里统一调整。</div>
+                    </div>
+                </div>
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">奖项口径统一</div>
+                        <div class="event-item-meta">当金银铜、优胜奖、参赛奖的加分需要重订时，可以不用逐条改赛事成绩。</div>
+                    </div>
+                </div>
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">定级阈值校准</div>
+                        <div class="event-item-meta">当队伍整体 Rating 提升后，可以直接调整各等级的起始 Rating，并通过颜色预览观察层级是否清晰。</div>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+        <article class="card">
+            <div class="card-header">
+                <h3>赛事级别权重</h3>
+            </div>
+            <div class="rule-grid">
+                {% for row in contest_level_rows %}
+                    <div class="rule-card">
+                        <h4>{{ row.label }}</h4>
+                        <p>该级别赛事默认使用的 Rating 权重。</p>
+                        <label for="{{ row.field.id_for_label }}">{{ row.field.label }}</label>
+                        {{ row.field }}
+                        {% for error in row.field.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+                        <div class="rule-meta" style="margin-top: 10px;">
+                            <span>当前值</span>
+                            <strong>{{ row.preview }}</strong>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+        <article class="card">
+            <div class="card-header">
+                <h3>奖项加分</h3>
+            </div>
+            <div class="rule-grid">
+                {% for row in award_rows %}
+                    <div class="rule-card">
+                        <h4>{{ row.label }}</h4>
+                        <p>该奖项默认带来的额外加分。</p>
+                        <label for="{{ row.field.id_for_label }}">{{ row.field.label }}</label>
+                        {{ row.field }}
+                        {% for error in row.field.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+                        <div class="rule-meta" style="margin-top: 10px;">
+                            <span>当前值</span>
+                            <strong>+{{ row.preview }}</strong>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+        <article class="card" style="grid-column: span 2;">
+            <div class="card-header">
+                <h3>Rating 定级阈值</h3>
+            </div>
+            <div class="rule-grid">
+                {% for row in level_rows %}
+                    <div class="rule-card level-card" style="border-color: {{ row.color }};">
+                        <div class="level-card-head">
+                            <div>
+                                <h4 style="margin-bottom: 2px; color: {{ row.color }};">{{ row.label }}</h4>
+                                <p>{{ row.title }}</p>
+                            </div>
+                            <span class="badge {{ row.tone }}">{{ row.slug }}</span>
+                        </div>
+                        <label for="{{ row.field.id_for_label }}">{{ row.field.label }}</label>
+                        {{ row.field }}
+                        {% for error in row.field.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}
+                        <div class="level-range" data-range-target="{{ row.slug }}" style="margin-top: 10px;">
+                            当前区间：{{ row.range_text }}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+
+    <div class="quick-links" style="margin-top: 18px;">
+        <button type="submit">保存 Rating 规则</button>
+        <a class="quick-link" href="{% url 'management-rule-overview' %}">取消</a>
+    </div>
+</form>
+
+<script>
+    (() => {
+        const levelOrder = [
+            { slug: 'rookie', label: 'Rookie' },
+            { slug: 'solver', label: 'Solver' },
+            { slug: 'specialist', label: 'Specialist' },
+            { slug: 'expert', label: 'Expert' },
+            { slug: 'master', label: 'Master' },
+            { slug: 'legend', label: 'Legend' }
+        ];
+
+        function updateRanges() {
+            const values = levelOrder.map(item => {
+                const input = document.getElementById(`id_threshold_${item.slug}`);
+                return Number(input && input.value ? input.value : 0);
+            });
+
+            levelOrder.forEach((item, index) => {
+                const target = document.querySelector(`[data-range-target="${item.slug}"]`);
+                if (!target) {
+                    return;
+                }
+                const start = values[index];
+                const next = values[index + 1];
+                const rangeText = next ? `${start} - ${Math.max(start, next - 1)}` : `${start}+`;
+                target.textContent = `当前区间：${rangeText}`;
+            });
+        }
+
+        levelOrder.forEach(item => {
+            const input = document.getElementById(`id_threshold_${item.slug}`);
+            if (input) {
+                input.addEventListener('input', updateRanges);
+            }
+        });
+
+        updateRanges();
+    })();
+</script>
+{% endblock %}

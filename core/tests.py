@@ -29,6 +29,7 @@ from .models import (
     MemberCompetitionProfile,
     MemberProfile,
     User,
+    SystemSetting,
 )
 
 
@@ -2482,3 +2483,172 @@ class ContestRatingTests(TestCase):
         self.assertFalse(result.verified)
         self.assertTrue(result.is_revoked)
         self.assertEqual(competition_profile.current_rating, 0)
+
+
+class RuleManagementTests(TestCase):
+    def setUp(self):
+        self.super_admin_user = User.objects.create_user(
+            username='rules-root',
+            password='AdminPassword2026!',
+            role=User.Roles.SUPER_ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=self.super_admin_user,
+            display_name='规则超级管理员',
+            admin_level=AdminProfile.Level.SUPER_ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+        self.member_user = User.objects.create_user(
+            username='rules-member',
+            password='ACM123456',
+            role=User.Roles.MEMBER,
+        )
+        self.member_profile = MemberProfile.objects.create(
+            user=self.member_user,
+            real_name='规则队员',
+            student_id='20267777',
+            major='CST',
+            enrollment_year=2026,
+            status=MemberProfile.Status.ACTIVE,
+        )
+        self.contest = Contest.objects.create(
+            name='规则校赛',
+            series=Contest.Series.CAMPUS,
+            season='2026',
+            contest_date=timezone.localdate(),
+            level=Contest.Level.CAMPUS,
+            use_default_weight=True,
+            weight=1.00,
+            status=Contest.Status.PUBLISHED,
+            created_by=self.super_admin_user,
+        )
+        self.team = ContestTeam.objects.create(
+            contest=self.contest,
+            team_name='Rule Team',
+            leader=self.member_profile,
+        )
+        self.team.members.add(self.member_profile)
+        self.result = ContestResult.objects.create(
+            contest=self.contest,
+            team=self.team,
+            award_type=ContestResult.AwardType.SILVER,
+            award_label='校赛银奖',
+            verified=True,
+            verified_by=self.super_admin_user,
+            verified_at=timezone.now(),
+        )
+
+    def build_rating_rules_payload(self):
+        return {
+            'base_participation_score': 20,
+            'weight_national': '1.60',
+            'weight_regional': '1.40',
+            'weight_provincial': '1.20',
+            'weight_campus': '1.50',
+            'weight_internal': '0.80',
+            'bonus_gold': 120,
+            'bonus_silver': 90,
+            'bonus_bronze': 50,
+            'bonus_honorable': 25,
+            'bonus_finalist': 15,
+            'bonus_participation': 5,
+            'bonus_custom': 20,
+            'threshold_rookie': 1,
+            'threshold_solver': 150,
+            'threshold_specialist': 500,
+            'threshold_expert': 900,
+            'threshold_master': 1400,
+            'threshold_legend': 2000,
+        }
+
+    def test_super_admin_can_manage_rating_rules_and_recalculate_profiles(self):
+        profile = sync_member_competition_profile(self.member_profile)
+        self.assertEqual(profile.current_rating, 100)
+        self.assertEqual(profile.current_level, 'rookie')
+
+        self.client.login(username='rules-root', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('rating-rules-manage'),
+            self.build_rating_rules_payload(),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Rating 规则已更新')
+        self.contest.refresh_from_db()
+        profile.refresh_from_db()
+        self.result.refresh_from_db()
+
+        self.assertEqual(str(self.contest.weight), '1.50')
+        self.assertTrue(self.contest.use_default_weight)
+        self.assertEqual(self.result.rating_delta, 165)
+        self.assertEqual(profile.current_rating, 165)
+        self.assertEqual(profile.current_level, 'solver')
+        self.assertEqual(SystemSetting.get_value('rating_base_participation_score'), '20')
+        self.assertIsNotNone(SystemSetting.get_value('contest_level_weight_rules'))
+
+    def test_contest_with_manual_weight_keeps_its_own_weight(self):
+        manual_contest = Contest.objects.create(
+            name='手动权重赛',
+            series=Contest.Series.CAMPUS,
+            season='2026',
+            contest_date=timezone.localdate(),
+            level=Contest.Level.CAMPUS,
+            use_default_weight=False,
+            weight=2.00,
+            status=Contest.Status.PUBLISHED,
+            created_by=self.super_admin_user,
+        )
+        manual_team = ContestTeam.objects.create(
+            contest=manual_contest,
+            team_name='Manual Rule Team',
+            leader=self.member_profile,
+        )
+        manual_team.members.add(self.member_profile)
+        manual_result = ContestResult.objects.create(
+            contest=manual_contest,
+            team=manual_team,
+            award_type=ContestResult.AwardType.PARTICIPATION,
+            award_label='正式参赛',
+            verified=True,
+            verified_by=self.super_admin_user,
+            verified_at=timezone.now(),
+        )
+
+        self.client.login(username='rules-root', password='AdminPassword2026!')
+        self.client.post(reverse('rating-rules-manage'), self.build_rating_rules_payload(), follow=True)
+
+        manual_contest.refresh_from_db()
+        manual_result.refresh_from_db()
+        self.assertEqual(str(manual_contest.weight), '2.00')
+        self.assertFalse(manual_contest.use_default_weight)
+        self.assertEqual(manual_result.rating_delta, 50)
+
+    def test_rule_navigation_and_legacy_settings_route(self):
+        self.client.login(username='rules-root', password='AdminPassword2026!')
+        dashboard_response = self.client.get(reverse('management-dashboard'))
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertContains(dashboard_response, '规则管理')
+
+        overview_response = self.client.get(reverse('management-rule-overview'))
+        self.assertEqual(overview_response.status_code, 200)
+        self.assertContains(overview_response, '规则总览')
+        self.assertContains(overview_response, 'Rating 公式摘要')
+
+        legacy_response = self.client.get(reverse('system-settings-manage'))
+        self.assertEqual(legacy_response.status_code, 302)
+        self.assertEqual(legacy_response.url, reverse('star-rules-manage'))
+
+    def test_contest_create_preloads_weight_from_current_rule(self):
+        SystemSetting.objects.update_or_create(
+            key='contest_level_weight_rules',
+            defaults={'value': '{"campus": "1.25"}', 'updated_by': self.super_admin_user},
+        )
+
+        self.client.login(username='rules-root', password='AdminPassword2026!')
+        response = self.client.get(reverse('contest-create'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '跟随规则管理中的默认权重')
+        self.assertContains(response, '1.25')

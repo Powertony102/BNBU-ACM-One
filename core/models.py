@@ -319,6 +319,7 @@ class Contest(models.Model):
     contest_date = models.DateField()
     organizer = models.CharField(max_length=200, blank=True)
     level = models.CharField(max_length=20, choices=Level.choices, default=Level.CAMPUS)
+    use_default_weight = models.BooleanField(default=True)
     weight = models.DecimalField(max_digits=4, decimal_places=2, default=1.00)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     description = models.TextField(blank=True)
