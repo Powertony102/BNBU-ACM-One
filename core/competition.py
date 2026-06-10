@@ -1,4 +1,5 @@
-from decimal import Decimal
+import json
+from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
 
@@ -10,6 +11,7 @@ from .models import (
     EventSeriesCompletion,
     MemberCompetitionProfile,
     MemberProfile,
+    SystemSetting,
 )
 
 
@@ -92,10 +94,114 @@ COMPETITION_LEVELS = [
     },
 ]
 
+RATING_BASE_PARTICIPATION_SCORE = 20
+CONTEST_LEVEL_RULES_SETTING_KEY = 'contest_level_weight_rules'
+AWARD_BONUS_RULES_SETTING_KEY = 'award_bonus_rules'
+COMPETITION_LEVEL_THRESHOLDS_SETTING_KEY = 'competition_level_threshold_rules'
+BASE_PARTICIPATION_SETTING_KEY = 'rating_base_participation_score'
+
+
+def _load_json_setting(key, default):
+    value = SystemSetting.get_value(key)
+    if not value:
+        return default
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if isinstance(parsed, type(default)) else default
+
+
+def get_base_participation_score():
+    raw_value = SystemSetting.get_value(BASE_PARTICIPATION_SETTING_KEY, str(RATING_BASE_PARTICIPATION_SCORE))
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return RATING_BASE_PARTICIPATION_SCORE
+
+
+def get_contest_level_weight_rules():
+    configured = _load_json_setting(
+        CONTEST_LEVEL_RULES_SETTING_KEY,
+        {},
+    )
+    rules = {}
+    for level, default_weight in LEVEL_WEIGHT_MAP.items():
+        configured_value = configured.get(level)
+        try:
+            rules[level] = Decimal(str(configured_value)) if configured_value not in (None, '') else default_weight
+        except (InvalidOperation, TypeError, ValueError):
+            rules[level] = default_weight
+    return rules
+
+
+def get_default_contest_weight(level):
+    return get_contest_level_weight_rules().get(level, Decimal('1.00'))
+
+
+def get_award_bonus_rules():
+    configured = _load_json_setting(
+        AWARD_BONUS_RULES_SETTING_KEY,
+        {},
+    )
+    rules = {}
+    for award_type, default_bonus in AWARD_BONUS_MAP.items():
+        configured_value = configured.get(award_type)
+        try:
+            rules[award_type] = int(configured_value) if configured_value not in (None, '') else default_bonus
+        except (TypeError, ValueError):
+            rules[award_type] = default_bonus
+    return rules
+
+
+def get_competition_level_rules():
+    configured = _load_json_setting(
+        COMPETITION_LEVEL_THRESHOLDS_SETTING_KEY,
+        {},
+    )
+    rules = []
+    for level in COMPETITION_LEVELS:
+        min_rating = level['min_rating']
+        configured_value = configured.get(level['slug'])
+        try:
+            min_rating = int(configured_value) if configured_value not in (None, '') else min_rating
+        except (TypeError, ValueError):
+            min_rating = level['min_rating']
+        rules.append(
+            {
+                **level,
+                'min_rating': min_rating,
+            }
+        )
+    rules.sort(key=lambda item: (item['min_rating'], item['slug']))
+    return rules
+
+
+def build_competition_level_ranges():
+    levels = get_competition_level_rules()
+    ranges = []
+    for index, level in enumerate(levels):
+        max_rating = None
+        if index < len(levels) - 1:
+            max_rating = max(levels[index + 1]['min_rating'] - 1, level['min_rating'])
+        ranges.append(
+            {
+                **level,
+                'max_rating': max_rating,
+                'range_text': (
+                    f"{level['min_rating']}+"
+                    if max_rating is None
+                    else f"{level['min_rating']} - {max_rating}"
+                ),
+            }
+        )
+    return ranges
+
 
 def get_competition_level(rating):
-    selected = COMPETITION_LEVELS[0]
-    for level in COMPETITION_LEVELS:
+    levels = get_competition_level_rules()
+    selected = levels[0]
+    for level in levels:
         if rating >= level['min_rating']:
             selected = level
     return selected
@@ -121,14 +227,14 @@ def get_competition_display_color(default_color, integrity_sanction=None):
     return INTEGRITY_RESTRICTED_COLOR if integrity_sanction else default_color
 
 
-def get_level_weight(level, stored_weight=None):
-    if stored_weight:
+def get_level_weight(level, stored_weight=None, use_default_weight=False):
+    if stored_weight and not use_default_weight:
         return Decimal(str(stored_weight))
-    return LEVEL_WEIGHT_MAP.get(level, Decimal('1.00'))
+    return get_default_contest_weight(level)
 
 
 def get_award_bonus(award_type):
-    return AWARD_BONUS_MAP.get(award_type, 0)
+    return get_award_bonus_rules().get(award_type, 0)
 
 
 def get_decay_factor(contest_date, today=None):
@@ -144,9 +250,13 @@ def get_decay_factor(contest_date, today=None):
 
 
 def calculate_result_rating_delta(result, today=None):
-    level_weight = get_level_weight(result.contest.level, result.contest.weight)
+    level_weight = get_level_weight(
+        result.contest.level,
+        result.contest.weight,
+        use_default_weight=getattr(result.contest, 'use_default_weight', False),
+    )
     decay_factor = get_decay_factor(result.contest.contest_date, today=today)
-    base_score = 20 + get_award_bonus(result.award_type) + result.manual_bonus
+    base_score = get_base_participation_score() + get_award_bonus(result.award_type) + result.manual_bonus
     delta = Decimal(base_score) * level_weight * decay_factor
     return int(delta.quantize(Decimal('1')))
 
@@ -227,7 +337,11 @@ def choose_highest_award(results):
         results,
         key=lambda result: (
             get_award_bonus(result.award_type),
-            get_level_weight(result.contest.level, result.contest.weight),
+            get_level_weight(
+                result.contest.level,
+                result.contest.weight,
+                use_default_weight=getattr(result.contest, 'use_default_weight', False),
+            ),
             result.contest.contest_date,
         ),
         reverse=True,
