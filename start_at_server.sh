@@ -45,7 +45,7 @@ echo "=========================================="
 
 # ----- 1. 检查项目目录 -----
 echo ""
-echo "[1/7] 检查项目目录..."
+echo "[1/6] 检查项目目录..."
 if [[ ! -f "${BACKEND_DIR}/manage.py" ]]; then
     echo "错误: ${BACKEND_DIR}/manage.py 不存在"
     echo "请先将项目文件上传到 ${PROJECT_DIR}"
@@ -54,7 +54,7 @@ fi
 
 # ----- 2. 创建虚拟环境并安装依赖 -----
 echo ""
-echo "[2/7] 创建虚拟环境并安装依赖..."
+echo "[2/6] 创建虚拟环境并安装依赖..."
 cd "${BACKEND_DIR}"
 
 # 检查是否有 uv，优先使用
@@ -78,7 +78,7 @@ echo "依赖安装完成"
 
 # ----- 3. 数据库迁移 -----
 echo ""
-echo "[3/7] 执行数据库迁移..."
+echo "[3/6] 执行数据库迁移..."
 python manage.py migrate --noinput
 
 # 设置数据库文件权限（SQLite 需要写权限）
@@ -91,17 +91,12 @@ chmod 775 "${BACKEND_DIR}"
 
 # ----- 4. 收集静态文件 -----
 echo ""
-echo "[4/7] 收集静态文件..."
+echo "[4/6] 收集静态文件..."
 python manage.py collectstatic --noinput
 
-# ----- 5. 引导演示数据（首次部署）-----
+# ----- 5. 创建 systemd 服务 -----
 echo ""
-echo "[5/7] 初始化演示数据..."
-python manage.py bootstrap_demo || true
-
-# ----- 6. 创建 systemd 服务 -----
-echo ""
-echo "[6/7] 创建 systemd 服务..."
+echo "[5/6] 创建 systemd 服务..."
 
 # 创建日志目录
 mkdir -p "${LOG_DIR}"
@@ -139,9 +134,9 @@ systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl restart "${SERVICE_NAME}"
 
-# ----- 7. 检查服务状态 -----
+# ----- 6. 检查服务状态 -----
 echo ""
-echo "[7/7] 检查服务状态..."
+echo "[6/6] 检查服务状态..."
 sleep 2
 
 if systemctl is-active --quiet "${SERVICE_NAME}"; then
@@ -165,8 +160,10 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "  3. 网站设置 → SSL → Let's Encrypt → 申请证书"
     echo "     开启: 强制 HTTPS"
     echo ""
-    echo "  超级管理员: superadmin / ACM123456"
-    echo "  普通会员:   member01 / ACM123456"
+    echo "  如需创建管理员，请执行:"
+    echo "  cd ${BACKEND_DIR}"
+    echo "  source .venv/bin/activate"
+    echo "  python manage.py createsuperuser"
     echo ""
     echo "  查看服务状态: systemctl status ${SERVICE_NAME}"
     echo "  查看错误日志: journalctl -u ${SERVICE_NAME} -n 50"
