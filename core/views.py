@@ -811,6 +811,14 @@ def build_member_team_prefill_map(team_queryset):
             'name': team.name,
             'member_ids': [member.id for member in team.members.all()],
             'member_names': [member.real_name for member in team.members.all()],
+            'members': [
+                {
+                    'id': member.id,
+                    'name': member.real_name,
+                    'student_id': member.student_id,
+                }
+                for member in sorted(team.members.all(), key=lambda member: (member.real_name, member.student_id))
+            ],
         }
         for team in team_queryset.prefetch_related('members')
     }
