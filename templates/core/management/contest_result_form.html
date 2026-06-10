@@ -7,14 +7,54 @@
 {% block content %}
 <section class="page-hero">
     <h2>{{ page_title }}</h2>
-    <p>当前赛事：{{ contest.name }}。第一版不记录解题数，仅维护奖项、名次描述和认证状态。</p>
+    <p>当前赛事：{{ contest.name }}。这里会直接展示当前默认加分口径，方便你在录入成绩时判断这条记录会如何影响成员 Rating。</p>
 </section>
 
 <section class="grid">
+    <article class="card soft">
+        <div class="card-header">
+            <h3>默认加分口径</h3>
+        </div>
+        <div class="stack" style="gap: 12px;">
+            <div class="event-item">
+                <div>
+                    <div class="event-item-title">正式参赛基础分</div>
+                    <div class="event-item-meta">所有正式赛事成绩都会先从这里开始计算。</div>
+                </div>
+                <span class="badge">{{ base_participation_score }}</span>
+            </div>
+            {% for item in award_bonus_rules %}
+                <div class="event-item">
+                    <div>
+                        <div class="event-item-title">{{ item.label }}</div>
+                        <div class="event-item-meta">当前奖项的默认加分。</div>
+                    </div>
+                    <span class="badge live">+{{ item.bonus }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    </article>
+
     <article class="card">
         <form method="post">
             {% csrf_token %}
-            {{ form.as_p }}
+            <p>{{ form.team.label_tag }}{{ form.team }}{% for error in form.team.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.award_type.label_tag }}{{ form.award_type }}{% for error in form.award_type.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.award_label.label_tag }}{{ form.award_label }}{% for error in form.award_label.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.rank_label.label_tag }}{{ form.rank_label }}{% for error in form.rank_label.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.result_tier.label_tag }}{{ form.result_tier }}{% for error in form.result_tier.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.manual_bonus.label_tag }}{{ form.manual_bonus }}{% if form.manual_bonus.help_text %}<small>{{ form.manual_bonus.help_text }}</small>{% endif %}{% for error in form.manual_bonus.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.verified }} <label for="{{ form.verified.id_for_label }}" style="display: inline;">{{ form.verified.label }}</label>{% for error in form.verified.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.evidence_url.label_tag }}{{ form.evidence_url }}{% for error in form.evidence_url.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <p>{{ form.note.label_tag }}{{ form.note }}{% for error in form.note.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
+            <div class="event-item" style="margin-top: 12px;">
+                <div>
+                    <div class="event-item-title">即时预估</div>
+                    <div class="event-item-meta" id="rating-preview">
+                        将根据当前奖项类型和人工加分预估基础分，最终实际 Rating 还会乘以赛事权重与时间衰减。
+                    </div>
+                </div>
+            </div>
             <div class="quick-links" style="margin-top: 16px;">
                 <button type="submit">保存成绩</button>
                 <a class="quick-link" href="{% url 'contest-detail-manage' contest.id %}">返回赛事</a>
@@ -22,4 +62,55 @@
         </form>
     </article>
 </section>
+
+<script>
+    (() => {
+        const awardBonusMap = {
+            {% for item in award_bonus_rules %}
+                '{{ item.key }}': {{ item.bonus }}{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        };
+        const awardLabelMap = {
+            {% for item in award_bonus_rules %}
+                '{{ item.key }}': '{{ item.label }}'{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        };
+        const awardTypeInput = document.getElementById('id_award_type');
+        const awardLabelInput = document.getElementById('id_award_label');
+        const manualBonusInput = document.getElementById('id_manual_bonus');
+        const preview = document.getElementById('rating-preview');
+        const baseParticipationScore = {{ base_participation_score }};
+
+        function updatePreview() {
+            if (!preview || !awardTypeInput) {
+                return;
+            }
+            const awardType = awardTypeInput.value;
+            const awardBonus = Number(awardBonusMap[awardType] || 0);
+            const manualBonus = Number(manualBonusInput && manualBonusInput.value ? manualBonusInput.value : 0);
+            const subtotal = baseParticipationScore + awardBonus + manualBonus;
+            preview.textContent = `基础分 ${baseParticipationScore} + 奖项加分 ${awardBonus} + 人工加分 ${manualBonus} = ${subtotal}，随后还会乘以赛事权重和时间衰减。`;
+        }
+
+        function maybeFillAwardLabel() {
+            if (!awardLabelInput || !awardTypeInput) {
+                return;
+            }
+            if (!awardLabelInput.value.trim()) {
+                awardLabelInput.value = awardLabelMap[awardTypeInput.value] || '';
+            }
+        }
+
+        if (awardTypeInput) {
+            awardTypeInput.addEventListener('change', () => {
+                maybeFillAwardLabel();
+                updatePreview();
+            });
+        }
+        if (manualBonusInput) {
+            manualBonusInput.addEventListener('input', updatePreview);
+        }
+        updatePreview();
+    })();
+</script>
 {% endblock %}

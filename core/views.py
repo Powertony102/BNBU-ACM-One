@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import math
 import queue
@@ -22,11 +23,20 @@ from django.utils import timezone
 import qrcode
 
 from .competition import (
+    AWARD_BONUS_RULES_SETTING_KEY,
+    BASE_PARTICIPATION_SETTING_KEY,
+    COMPETITION_LEVEL_THRESHOLDS_SETTING_KEY,
+    CONTEST_LEVEL_RULES_SETTING_KEY,
+    build_competition_level_ranges,
     build_integrity_sanction_snapshot,
     build_competition_ladder_queryset,
     build_member_competition_snapshot,
+    get_award_bonus_rules,
+    get_base_participation_score,
+    get_contest_level_weight_rules,
     get_competition_display_color,
     get_competition_level,
+    get_default_contest_weight,
     sync_event_series_completion,
     sync_member_competition_profile,
     sync_members_competition_profiles,
@@ -53,6 +63,7 @@ from .forms import (
     PasswordChangeConfirmForm,
     PasswordResetConfirmForm,
     PasswordResetRequestForm,
+    RatingRulesForm,
     SystemSettingsForm,
 )
 from .models import (
@@ -694,6 +705,59 @@ def build_event_series_choices(queryset):
     ]
 
 
+def sync_all_competition_profiles():
+    sync_members_competition_profiles(MemberProfile.objects.select_related('user').all())
+
+
+def sync_default_contest_weights():
+    default_weights = get_contest_level_weight_rules()
+    for level, weight in default_weights.items():
+        Contest.objects.filter(level=level, use_default_weight=True).update(weight=weight)
+
+
+def build_rating_rule_rows(form):
+    contest_level_rows = []
+    current_weight_rules = get_contest_level_weight_rules()
+    for level_value, level_label in Contest.Level.choices:
+        contest_level_rows.append(
+            {
+                'key': level_value,
+                'label': level_label,
+                'field': form[f'weight_{level_value}'],
+                'preview': str(current_weight_rules[level_value]),
+            }
+        )
+
+    award_rows = []
+    current_bonus_rules = get_award_bonus_rules()
+    for award_value, award_label in ContestResult.AwardType.choices:
+        award_rows.append(
+            {
+                'key': award_value,
+                'label': award_label,
+                'field': form[f'bonus_{award_value}'],
+                'preview': current_bonus_rules[award_value],
+            }
+        )
+
+    level_rows = []
+    for level in build_competition_level_ranges():
+        if level['slug'] == 'unrated':
+            continue
+        level_rows.append(
+            {
+                **level,
+                'field': form[f'threshold_{level["slug"]}'],
+            }
+        )
+
+    return {
+        'contest_level_rows': contest_level_rows,
+        'award_rows': award_rows,
+        'level_rows': level_rows,
+    }
+
+
 def build_event_search_choices(queryset):
     return [
         {
@@ -894,7 +958,8 @@ def approve_contest_submission(submission, cleaned_data, operator):
         contest.contest_date = cleaned_data['contest_date']
         contest.organizer = cleaned_data['organizer']
         contest.level = cleaned_data['contest_level']
-        contest.weight = contest.weight or 1.00
+        contest.use_default_weight = True
+        contest.weight = get_default_contest_weight(contest.level)
         contest.status = Contest.Status.PUBLISHED
         contest.description = submission.submission_note or contest.description
         if not contest.created_by_id:
@@ -2182,6 +2247,20 @@ def contest_create(request):
         {
             'form': form,
             'page_title': '创建赛事',
+            'contest_level_weights': [
+                {
+                    'key': level_value,
+                    'label': dict(Contest.Level.choices).get(level_value, level_value),
+                    'weight': str(weight),
+                }
+                for level_value, weight in get_contest_level_weight_rules().items()
+            ],
+            'contest_level_weights_json': json.dumps(
+                {
+                    level_value: str(weight)
+                    for level_value, weight in get_contest_level_weight_rules().items()
+                }
+            ),
         },
     )
 
@@ -2211,6 +2290,20 @@ def contest_edit(request, contest_id):
             'form': form,
             'page_title': '编辑赛事',
             'contest': contest,
+            'contest_level_weights': [
+                {
+                    'key': level_value,
+                    'label': dict(Contest.Level.choices).get(level_value, level_value),
+                    'weight': str(weight),
+                }
+                for level_value, weight in get_contest_level_weight_rules().items()
+            ],
+            'contest_level_weights_json': json.dumps(
+                {
+                    level_value: str(weight)
+                    for level_value, weight in get_contest_level_weight_rules().items()
+                }
+            ),
         },
     )
 
@@ -2235,6 +2328,7 @@ def contest_detail_manage(request, contest_id):
             'results': results,
             'verified_result_total': sum(1 for result in results if result.verified),
             'revoked_result_total': sum(1 for result in results if result.is_revoked),
+            'contest_weight_source_label': '跟随规则管理' if contest.use_default_weight else '手动覆写',
         },
     )
 
@@ -2316,6 +2410,15 @@ def contest_result_create(request, contest_id):
             'form': form,
             'contest': contest,
             'page_title': '录入赛事成绩',
+            'base_participation_score': get_base_participation_score(),
+            'award_bonus_rules': [
+                {
+                    'key': award,
+                    'label': dict(ContestResult.AwardType.choices).get(award, award),
+                    'bonus': bonus,
+                }
+                for award, bonus in get_award_bonus_rules().items()
+            ],
         },
     )
 
@@ -2351,6 +2454,15 @@ def contest_result_edit(request, result_id):
             'contest': result.contest,
             'result': result,
             'page_title': '编辑赛事成绩',
+            'base_participation_score': get_base_participation_score(),
+            'award_bonus_rules': [
+                {
+                    'key': award,
+                    'label': dict(ContestResult.AwardType.choices).get(award, award),
+                    'bonus': bonus,
+                }
+                for award, bonus in get_award_bonus_rules().items()
+            ],
         },
     )
 
@@ -3001,7 +3113,42 @@ def admin_toggle_status(request, admin_profile_id):
 
 
 @login_required
-def system_settings_manage(request):
+def management_rule_overview(request):
+    if not require_super_admin(request.user):
+        return HttpResponseForbidden('仅超级管理员可访问。')
+    level_ranges = build_competition_level_ranges()
+    contest_level_labels = dict(Contest.Level.choices)
+    award_labels = dict(ContestResult.AwardType.choices)
+    return render(
+        request,
+        'core/management/rule_overview.html',
+        {
+            'star_recent_window_days': int(SystemSetting.get_value('star_recent_window_days', '30')),
+            'qr_code_expire_minutes': int(SystemSetting.get_value('qr_code_expire_minutes', '120')),
+            'base_participation_score': get_base_participation_score(),
+            'contest_level_weights': [
+                {
+                    'key': level,
+                    'label': contest_level_labels.get(level, level),
+                    'weight': weight,
+                }
+                for level, weight in get_contest_level_weight_rules().items()
+            ],
+            'award_bonus_rules': [
+                {
+                    'key': award,
+                    'label': award_labels.get(award, award),
+                    'bonus': bonus,
+                }
+                for award, bonus in get_award_bonus_rules().items()
+            ],
+            'level_ranges': level_ranges,
+        },
+    )
+
+
+@login_required
+def star_rules_manage(request):
     if not require_super_admin(request.user):
         return HttpResponseForbidden('仅超级管理员可访问。')
     initial = {
@@ -3027,9 +3174,72 @@ def system_settings_manage(request):
                 f"qr_code_expire_minutes={form.cleaned_data['qr_code_expire_minutes']}"
             ),
         )
-        messages.success(request, '系统参数已更新。')
-        return redirect('system-settings-manage')
+        messages.success(request, 'Star 与签到入口规则已更新。')
+        return redirect('star-rules-manage')
     return render(request, 'core/management/system_settings.html', {'form': form})
+
+
+@login_required
+def rating_rules_manage(request):
+    if not require_super_admin(request.user):
+        return HttpResponseForbidden('仅超级管理员可访问。')
+    form = RatingRulesForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            SystemSetting.objects.update_or_create(
+                key=BASE_PARTICIPATION_SETTING_KEY,
+                defaults={
+                    'value': str(form.cleaned_data['base_participation_score']),
+                    'updated_by': request.user,
+                },
+            )
+            SystemSetting.objects.update_or_create(
+                key=CONTEST_LEVEL_RULES_SETTING_KEY,
+                defaults={
+                    'value': json.dumps(form.get_contest_level_weights_payload()),
+                    'updated_by': request.user,
+                },
+            )
+            SystemSetting.objects.update_or_create(
+                key=AWARD_BONUS_RULES_SETTING_KEY,
+                defaults={
+                    'value': json.dumps(form.get_award_bonus_payload()),
+                    'updated_by': request.user,
+                },
+            )
+            SystemSetting.objects.update_or_create(
+                key=COMPETITION_LEVEL_THRESHOLDS_SETTING_KEY,
+                defaults={
+                    'value': json.dumps(form.get_level_threshold_payload()),
+                    'updated_by': request.user,
+                },
+            )
+            sync_default_contest_weights()
+            sync_all_competition_profiles()
+            log_action(
+                request.user,
+                'update_rating_rules',
+                'SystemSetting',
+                detail=(
+                    f"base_participation_score={form.cleaned_data['base_participation_score']};"
+                    f"contest_level_weights={json.dumps(form.get_contest_level_weights_payload(), ensure_ascii=False)};"
+                    f"award_bonuses={json.dumps(form.get_award_bonus_payload(), ensure_ascii=False)};"
+                    f"thresholds={json.dumps(form.get_level_threshold_payload(), ensure_ascii=False)}"
+                ),
+            )
+            messages.success(request, 'Rating 规则已更新，相关成员档案已全量重算。')
+            return redirect('rating-rules-manage')
+    context = {
+        'form': form,
+        'base_participation_score': get_base_participation_score(),
+    }
+    context.update(build_rating_rule_rows(form))
+    return render(request, 'core/management/rating_rules.html', context)
+
+
+@login_required
+def system_settings_manage(request):
+    return redirect('star-rules-manage')
 
 
 @login_required

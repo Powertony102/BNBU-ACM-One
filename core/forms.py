@@ -1,5 +1,6 @@
 import re
 from datetime import timedelta
+from decimal import Decimal
 
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
@@ -8,7 +9,15 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 
-from .competition import LEVEL_WEIGHT_MAP
+from .competition import (
+    AWARD_BONUS_MAP,
+    COMPETITION_LEVELS,
+    LEVEL_WEIGHT_MAP,
+    get_award_bonus_rules,
+    get_base_participation_score,
+    get_competition_level_rules,
+    get_default_contest_weight,
+)
 from .models import (
     AdminProfile,
     CheckInRecord,
@@ -724,6 +733,7 @@ class ContestForm(forms.ModelForm):
             'contest_date',
             'organizer',
             'level',
+            'use_default_weight',
             'weight',
             'status',
             'description',
@@ -735,6 +745,7 @@ class ContestForm(forms.ModelForm):
             'stage': '阶段',
             'organizer': '主办方',
             'level': '赛事级别',
+            'use_default_weight': '跟随规则管理中的默认权重',
             'weight': '评分权重',
             'status': '状态',
             'description': '说明',
@@ -743,17 +754,30 @@ class ContestForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
+        if not self.is_bound:
+            level_value = self.initial.get('level') or getattr(self.instance, 'level', None) or Contest.Level.CAMPUS
+            use_default_value = self.initial.get('use_default_weight')
+            if use_default_value is None:
+                use_default_value = getattr(self.instance, 'use_default_weight', True)
+            self.fields['use_default_weight'].initial = use_default_value
+            if getattr(self.instance, 'pk', None) is None and not self.initial.get('weight'):
+                self.fields['weight'].initial = get_default_contest_weight(level_value)
         self.fields['season'].widget.attrs['placeholder'] = '2026'
         self.fields['stage'].widget.attrs['placeholder'] = '区域赛 / 校内选拔'
         self.fields['organizer'].widget.attrs['placeholder'] = '主办方，可选'
+        self.fields['use_default_weight'].help_text = '勾选后会跟随“规则管理”中的赛事级别权重，并在全局规则调整时自动更新。'
+        self.fields['weight'].help_text = '如果取消跟随默认规则，这里可填写该赛事专属权重。'
         self.fields['description'].help_text = '可填写赛事背景、说明或收录口径。'
 
     def clean(self):
         cleaned_data = super().clean()
         level = cleaned_data.get('level')
         weight = cleaned_data.get('weight')
-        if level and not weight:
-            cleaned_data['weight'] = LEVEL_WEIGHT_MAP.get(level)
+        use_default_weight = cleaned_data.get('use_default_weight')
+        if level and use_default_weight:
+            cleaned_data['weight'] = get_default_contest_weight(level)
+        elif level and not weight:
+            cleaned_data['weight'] = get_default_contest_weight(level)
         return cleaned_data
 
 
@@ -911,6 +935,9 @@ class ContestResultForm(forms.ModelForm):
         self.fields['manual_bonus'].help_text = '仅在默认口径不够表达时使用，可填正负整数。'
         if self.instance and self.instance.pk:
             self.fields['verified'].initial = self.instance.verified
+        elif not self.is_bound:
+            initial_award_type = self.initial.get('award_type') or ContestResult.AwardType.PARTICIPATION
+            self.fields['award_label'].initial = dict(ContestResult.AwardType.choices).get(initial_award_type, '')
 
     def clean_award_label(self):
         return self.cleaned_data['award_label'].strip()
@@ -1080,3 +1107,100 @@ class SystemSettingsForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
+
+
+class RatingRulesForm(forms.Form):
+    base_participation_score = forms.IntegerField(label='正式参赛基础分', min_value=0, max_value=10000)
+
+    contest_level_field_prefix = 'weight_'
+    award_bonus_field_prefix = 'bonus_'
+    level_threshold_field_prefix = 'threshold_'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        contest_level_rules = get_default_weight_rules_for_form()
+        award_bonus_rules = get_award_bonus_rules()
+        level_rules = get_competition_level_rules()
+
+        for level_value, level_label in Contest.Level.choices:
+            field_name = f'{self.contest_level_field_prefix}{level_value}'
+            self.fields[field_name] = forms.DecimalField(
+                label=f'{level_label} 权重',
+                min_value=Decimal('0.10'),
+                max_value=Decimal('9.99'),
+                decimal_places=2,
+                max_digits=4,
+                initial=contest_level_rules[level_value],
+            )
+
+        for award_value, award_label in ContestResult.AwardType.choices:
+            field_name = f'{self.award_bonus_field_prefix}{award_value}'
+            self.fields[field_name] = forms.IntegerField(
+                label=f'{award_label} 加分',
+                min_value=-10000,
+                max_value=10000,
+                initial=award_bonus_rules[award_value],
+            )
+
+        for level in level_rules:
+            if level['slug'] == 'unrated':
+                continue
+            field_name = f'{self.level_threshold_field_prefix}{level["slug"]}'
+            self.fields[field_name] = forms.IntegerField(
+                label=f'{level["label"]} 起始 Rating',
+                min_value=1,
+                max_value=100000,
+                initial=level['min_rating'],
+            )
+
+        apply_widget_attrs(self.fields)
+        self.fields['base_participation_score'].initial = get_base_participation_score()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        threshold_entries = []
+        for level in COMPETITION_LEVELS:
+            if level['slug'] == 'unrated':
+                continue
+            field_name = f'{self.level_threshold_field_prefix}{level["slug"]}'
+            min_rating = cleaned_data.get(field_name)
+            if min_rating is None:
+                continue
+            threshold_entries.append((level, min_rating, field_name))
+
+        threshold_entries.sort(key=lambda entry: (entry[1], entry[0]['slug']))
+
+        previous_rating = 0
+        previous_label = 'Unrated'
+        for level, min_rating, field_name in threshold_entries:
+            if min_rating <= previous_rating:
+                self.add_error(field_name, f'必须大于上一档 {previous_label} 的起始值。')
+            previous_rating = min_rating
+            previous_label = level['label']
+        return cleaned_data
+
+    def get_contest_level_weights_payload(self):
+        return {
+            level_value: str(self.cleaned_data[f'{self.contest_level_field_prefix}{level_value}'])
+            for level_value, _ in Contest.Level.choices
+        }
+
+    def get_award_bonus_payload(self):
+        return {
+            award_value: self.cleaned_data[f'{self.award_bonus_field_prefix}{award_value}']
+            for award_value, _ in ContestResult.AwardType.choices
+        }
+
+    def get_level_threshold_payload(self):
+        return {
+            level['slug']: self.cleaned_data[f'{self.level_threshold_field_prefix}{level["slug"]}']
+            for level in COMPETITION_LEVELS
+            if level['slug'] != 'unrated'
+        }
+
+
+def get_default_weight_rules_for_form():
+    return {
+        level_value: get_default_contest_weight(level_value)
+        for level_value, _ in Contest.Level.choices
+    }
