@@ -694,6 +694,72 @@ def build_event_series_choices(queryset):
     ]
 
 
+def build_event_search_choices(queryset):
+    return [
+        {
+            'id': event.id,
+            'title': event.title,
+            'location': event.location,
+            'start_date': timezone.localtime(event.start_time).strftime('%Y-%m-%d'),
+            'start_time': timezone.localtime(event.start_time).strftime('%H:%M'),
+            'status': event.get_status_display(),
+            'review_status': event.get_review_status_display(),
+            'detail_url': reverse('event-detail-manage', args=[event.id]),
+            'edit_url': reverse('event-edit', args=[event.id]),
+        }
+        for event in queryset
+    ]
+
+
+def build_member_search_choices(members):
+    return [
+        {
+            'id': member.id,
+            'real_name': member.real_name,
+            'student_id': member.student_id,
+            'username': member.user.username,
+            'major': member.major or '未填写专业',
+            'enrollment_year': member.enrollment_year,
+            'status': '处罚期' if member.active_integrity_sanction else member.get_status_display(),
+            'detail_url': reverse('member-detail-manage', args=[member.id]),
+        }
+        for member in members
+    ]
+
+
+def build_member_event_search_choices(events):
+    return [
+        {
+            'id': event.id,
+            'title': event.title,
+            'event_type': event.get_event_type_display(),
+            'location': event.location,
+            'start_date': timezone.localtime(event.start_time).strftime('%Y-%m-%d'),
+            'start_time': timezone.localtime(event.start_time).strftime('%H:%M'),
+            'status': '签到中' if event.is_checkin_open() else event.get_status_display(),
+            'detail_url': reverse('member-event-detail', args=[event.id]),
+        }
+        for event in events
+    ]
+
+
+def build_member_application_search_choices(events):
+    return [
+        {
+            'id': event.id,
+            'title': event.title,
+            'location': event.location,
+            'start_date': timezone.localtime(event.start_time).strftime('%Y-%m-%d'),
+            'start_time': timezone.localtime(event.start_time).strftime('%H:%M'),
+            'review_status': event.get_review_status_display(),
+            'review_note': event.review_note or '等待审核结果',
+            'checkin_total': event.checkin_total,
+            'manage_url': reverse('event-detail-manage', args=[event.id]) if event.review_status == Event.ReviewStatus.APPROVED else '',
+        }
+        for event in events
+    ]
+
+
 def apply_contest_result_verification(result, verified, operator):
     result.verified = verified
     if verified:
@@ -1094,15 +1160,25 @@ def member_dashboard(request):
 def member_event_list(request):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
-    events = (
+    recent_window_days = 3
+    recent_start_date = timezone.localdate() - timedelta(days=recent_window_days - 1)
+    all_events = (
         Event.objects.filter(review_status=Event.ReviewStatus.APPROVED)
         .exclude(status=Event.Status.CANCELED)
-        .order_by('start_time')
+        .order_by('-start_time', '-id')
     )
-    my_applications = (
+    events = all_events.filter(
+        start_time__date__gte=recent_start_date,
+        start_time__date__lte=timezone.localdate(),
+    )
+    all_applications = (
         Event.objects.filter(applicant=request.user)
         .annotate(checkin_total=Count('checkins'))
         .order_by('-created_at')
+    )
+    my_applications = all_applications.filter(
+        created_at__date__gte=recent_start_date,
+        created_at__date__lte=timezone.localdate(),
     )
     return render(
         request,
@@ -1110,6 +1186,12 @@ def member_event_list(request):
         {
             'events': events,
             'my_applications': my_applications,
+            'recent_window_days': recent_window_days,
+            'recent_start_date': recent_start_date,
+            'recent_event_total': events.count(),
+            'recent_application_total': my_applications.count(),
+            'event_search_choices': build_member_event_search_choices(all_events),
+            'application_search_choices': build_member_application_search_choices(all_applications),
         },
     )
 
@@ -1659,14 +1741,18 @@ def member_list_manage(request):
             continue
         filtered_members.append(member)
 
+    visible_member_limit = 5
     context = {
-        'members': filtered_members,
+        'members': filtered_members[:visible_member_limit],
+        'member_search_choices': build_member_search_choices(filtered_members),
         'query': query,
         'selected_status': selected_status,
         'selected_integrity': selected_integrity,
         'active_total': sum(1 for member in filtered_members if member.status == MemberProfile.Status.ACTIVE),
         'restricted_total': restricted_total,
         'member_total': len(filtered_members),
+        'visible_member_total': min(len(filtered_members), visible_member_limit),
+        'visible_member_limit': visible_member_limit,
     }
     return render(request, 'core/management/member_list.html', context)
 
@@ -2333,17 +2419,33 @@ def contest_result_restore(request, result_id):
 def event_list_manage(request):
     if not require_management(request.user):
         return HttpResponseForbidden('仅管理员可访问。')
+    recent_window_days = 3
+    recent_start_date = timezone.localdate() - timedelta(days=recent_window_days - 1)
+    base_events = Event.objects.select_related('applicant', 'reviewed_by', 'series').prefetch_related(
+        'checkin_managers__member_profile'
+    )
     events = (
-        Event.objects.select_related('applicant', 'reviewed_by', 'series').prefetch_related('checkin_managers__member_profile')
+        base_events.filter(
+            start_time__date__gte=recent_start_date,
+            start_time__date__lte=timezone.localdate(),
+        )
         .annotate(checkin_total=Count('checkins'))
-        .order_by('review_status', 'start_time')
+        .order_by('-start_time', '-id')
+    )
+    searchable_events = (
+        Event.objects.select_related('applicant', 'reviewed_by', 'series').prefetch_related('checkin_managers__member_profile')
+        .order_by('-start_time', '-id')
     )
     return render(
         request,
         'core/management/event_list.html',
         {
             'events': events,
-            'pending_application_total': sum(1 for event in events if event.review_status == Event.ReviewStatus.PENDING),
+            'pending_application_total': Event.objects.filter(review_status=Event.ReviewStatus.PENDING).count(),
+            'recent_window_days': recent_window_days,
+            'recent_start_date': recent_start_date,
+            'recent_event_total': events.count(),
+            'event_search_choices': build_event_search_choices(searchable_events),
         },
     )
 

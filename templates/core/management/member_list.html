@@ -4,7 +4,163 @@
 {% block topbar_title %}成员管理{% endblock %}
 {% block topbar_subtitle %}<div class="topbar-subtitle">查看成员状态与诚信处罚情况</div>{% endblock %}
 
+{% block topbar_actions %}
+    <button class="button ghost" type="button" id="member-search-open">搜索成员</button>
+{% endblock %}
+
 {% block content %}
+<style>
+    .member-page-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 18px;
+        align-items: center;
+    }
+
+    .member-list-note {
+        margin-top: 14px;
+        padding: 14px 16px;
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        background: #fcfcfc;
+        color: var(--muted-foreground);
+        line-height: 1.55;
+    }
+
+    .member-search-modal[hidden] {
+        display: none;
+    }
+
+    .member-search-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(9, 9, 11, 0.45);
+    }
+
+    .member-search-panel {
+        width: min(760px, 100%);
+        max-height: min(78vh, 720px);
+        min-height: 0;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+    }
+
+    .member-search-header,
+    .member-search-footer {
+        padding: 18px 20px;
+    }
+
+    .member-search-header {
+        border-bottom: 1px solid var(--border);
+    }
+
+    .member-search-footer {
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .member-search-input-wrap {
+        padding: 0 20px 18px;
+    }
+
+    .member-search-input-wrap input {
+        width: 100%;
+    }
+
+    .member-search-results {
+        min-height: 0;
+        overflow: auto;
+        padding: 0 20px 20px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        overscroll-behavior: contain;
+    }
+
+    .member-search-card {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #fcfcfc;
+    }
+
+    .member-search-main {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .member-search-title {
+        font-weight: 700;
+        line-height: 1.35;
+    }
+
+    .member-search-meta {
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.45;
+        word-break: break-word;
+    }
+
+    .member-search-empty {
+        padding: 14px 16px;
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        color: var(--muted-foreground);
+        background: #fcfcfc;
+    }
+
+    .member-search-footer-note {
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    @media (max-width: 768px) {
+        .member-search-modal {
+            padding: 16px;
+        }
+
+        .member-search-panel {
+            max-height: calc(100vh - 32px);
+        }
+
+        .member-search-header,
+        .member-search-footer,
+        .member-search-input-wrap,
+        .member-search-results {
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        .member-search-results {
+            padding-bottom: 16px;
+        }
+
+        .member-search-card {
+            flex-direction: column;
+            align-items: stretch;
+        }
+    }
+</style>
 <section class="page-hero">
     <h2>成员管理</h2>
     <p>这里用于查看队员资料、当前竞赛档案，以及是否处于诚信处罚期。</p>
@@ -24,9 +180,17 @@
         </div>
     </div>
 
-    <div class="quick-links">
+    <div class="member-page-actions">
+        <button class="button ghost" type="button" id="member-search-hero-open">搜索成员</button>
+        <div class="quick-links">
         <a class="quick-link" href="{% url 'management-dashboard' %}">返回管理首页</a>
         <a class="quick-link" href="{% url 'management-star-analytics' %}">查看 Star 统计</a>
+        </div>
+    </div>
+
+    <div class="member-list-note">
+        当前右侧成员卡片仅展示前 {{ visible_member_total }} / {{ member_total }} 名筛选结果。
+        其余成员可通过“搜索成员”弹窗继续按姓名、学号、用户名或专业快速查找。
     </div>
 </section>
 
@@ -66,7 +230,7 @@
     <article class="card">
         <div class="card-header">
             <h3>成员列表</h3>
-            <span class="pill">{{ member_total }} 人</span>
+            <span class="pill">展示 {{ visible_member_total }} / {{ member_total }} 人</span>
         </div>
         <div class="feed-list">
             {% for member in members %}
@@ -96,4 +260,102 @@
         </div>
     </article>
 </section>
+
+<div class="member-search-modal" id="member-search-modal" hidden>
+    <div class="member-search-panel">
+        <div class="member-search-header">
+            <h3 style="margin: 0;">搜索成员</h3>
+            <p class="muted" style="margin: 8px 0 0;">可在当前筛选结果内继续按姓名、学号、用户名或专业搜索成员。</p>
+        </div>
+        <div class="member-search-input-wrap">
+            <input id="member-search-input" type="search" placeholder="搜索姓名 / 学号 / 用户名 / 专业">
+        </div>
+        <div class="member-search-results" id="member-search-results"></div>
+        <div class="member-search-footer">
+            <span class="member-search-footer-note" id="member-search-footer-note">共 0 名成员</span>
+            <button class="button secondary" type="button" id="member-search-close">关闭</button>
+        </div>
+    </div>
+</div>
+
+{{ member_search_choices|json_script:"member-search-options" }}
+<script>
+    (() => {
+        const searchOptions = JSON.parse(document.getElementById('member-search-options').textContent);
+        const modal = document.getElementById('member-search-modal');
+        const openButtons = [
+            document.getElementById('member-search-open'),
+            document.getElementById('member-search-hero-open'),
+        ].filter(Boolean);
+        const closeButton = document.getElementById('member-search-close');
+        const input = document.getElementById('member-search-input');
+        const results = document.getElementById('member-search-results');
+        const footerNote = document.getElementById('member-search-footer-note');
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function renderResults(keyword = '') {
+            const query = keyword.trim().toLowerCase();
+            const filtered = searchOptions.filter((option) => {
+                if (!query) {
+                    return true;
+                }
+                return [option.real_name, option.student_id, option.username, option.major]
+                    .filter(Boolean)
+                    .some((value) => value.toLowerCase().includes(query));
+            });
+
+            footerNote.textContent = `共 ${filtered.length} 名成员`;
+            if (!filtered.length) {
+                results.innerHTML = '<div class="member-search-empty">没有找到匹配的成员。</div>';
+                return;
+            }
+
+            results.innerHTML = filtered.map((option) => `
+                <a class="member-search-card" href="${escapeHtml(option.detail_url)}">
+                    <div class="member-search-main">
+                        <div class="member-search-title">${escapeHtml(option.real_name)}</div>
+                        <div class="member-search-meta">${escapeHtml(option.student_id)} · ${escapeHtml(option.username)}</div>
+                        <div class="member-search-meta">${escapeHtml(option.major)}${option.enrollment_year ? ` · ${escapeHtml(option.enrollment_year)} 级` : ''}</div>
+                    </div>
+                    <span class="badge ${option.status === '处罚期' ? 'dim' : option.status === 'Active' ? 'live' : 'warn'}">${escapeHtml(option.status)}</span>
+                </a>
+            `).join('');
+        }
+
+        function openModal() {
+            modal.hidden = false;
+            input.value = '';
+            renderResults('');
+            input.focus();
+        }
+
+        function closeModal() {
+            modal.hidden = true;
+        }
+
+        openButtons.forEach((button) => {
+            button.addEventListener('click', openModal);
+        });
+        closeButton.addEventListener('click', closeModal);
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+        input.addEventListener('input', () => renderResults(input.value));
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !modal.hidden) {
+                closeModal();
+            }
+        });
+    })();
+</script>
 {% endblock %}

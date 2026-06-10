@@ -391,6 +391,68 @@ class MemberIntegrityManagementTests(TestCase):
         self.assertIsNone(future_sanction.revoked_at)
 
 
+class MemberListManageTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username='member-admin',
+            password='AdminPassword2026!',
+            role=User.Roles.ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=self.admin_user,
+            display_name='成员管理员',
+            admin_level=AdminProfile.Level.ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+        self.members = []
+        for index in range(6):
+            user = User.objects.create_user(
+                username=f'member-user-{index}',
+                password='MemberPassword2026!',
+                role=User.Roles.MEMBER,
+            )
+            profile = MemberProfile.objects.create(
+                user=user,
+                real_name=f'成员{index}',
+                student_id=f'20260{index:04d}',
+                major='CST' if index % 2 == 0 else 'DS',
+                enrollment_year=2023 + (index % 2),
+                status=MemberProfile.Status.ACTIVE,
+            )
+            self.members.append(profile)
+
+    def test_member_list_manage_shows_only_first_five_cards(self):
+        self.client.login(username='member-admin', password='AdminPassword2026!')
+        response = self.client.get(reverse('member-list-manage'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['members']), 5)
+        self.assertEqual(response.context['member_total'], 6)
+        self.assertEqual(response.context['visible_member_total'], 5)
+        self.assertEqual(response.context['visible_member_limit'], 5)
+        self.assertEqual(
+            [member.id for member in response.context['members']],
+            [member.id for member in self.members[:5]],
+        )
+        self.assertContains(response, '展示 5 / 6 人')
+        self.assertContains(response, '搜索成员')
+
+    def test_member_list_manage_search_choices_keep_full_filtered_results(self):
+        self.client.login(username='member-admin', password='AdminPassword2026!')
+        response = self.client.get(reverse('member-list-manage'), {'status': 'active'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '搜索姓名 / 学号 / 用户名 / 专业')
+        self.assertContains(response, '当前筛选结果内继续按姓名、学号、用户名或专业搜索成员')
+        self.assertEqual(len(response.context['member_search_choices']), 6)
+        self.assertEqual(
+            [item['id'] for item in response.context['member_search_choices']],
+            [member.id for member in self.members],
+        )
+        self.assertEqual(response.context['member_search_choices'][-1]['real_name'], '成员5')
+
+
 class MemberRegistrationTests(TestCase):
     def test_register_page_shows_required_examples(self):
         response = self.client.get(reverse('register'))
@@ -745,6 +807,134 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertContains(response, '队员专题分享')
         self.assertContains(response, '待审核')
 
+    def test_member_event_list_only_shows_recent_three_days_for_events_and_recently_created_applications(self):
+        now = timezone.now()
+        recent_event = Event.objects.create(
+            title='近期公开活动',
+            event_type=Event.EventType.TRAINING,
+            description='近三天内应显示。',
+            location='Lab 801',
+            start_time=now - timedelta(hours=2),
+            end_time=now + timedelta(hours=1),
+            checkin_start_time=now - timedelta(hours=3),
+            checkin_end_time=now + timedelta(minutes=30),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now,
+        )
+        old_event = Event.objects.create(
+            title='更早公开活动',
+            event_type=Event.EventType.LECTURE,
+            description='超出近三天范围。',
+            location='Lab 802',
+            start_time=now - timedelta(days=5),
+            end_time=now - timedelta(days=5) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=5, minutes=20),
+            checkin_end_time=now - timedelta(days=5) + timedelta(hours=1),
+            status=Event.Status.CHECKIN_CLOSED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now - timedelta(days=5),
+        )
+        recent_application = Event.objects.create(
+            title='近期活动申请',
+            event_type=Event.EventType.SHARING,
+            description='近三天内申请。',
+            location='Lab 803',
+            start_time=now - timedelta(days=1),
+            end_time=now - timedelta(days=1) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=1, minutes=20),
+            checkin_end_time=now - timedelta(days=1) + timedelta(hours=1),
+            status=Event.Status.DRAFT,
+            applicant=self.member_user,
+            review_status=Event.ReviewStatus.PENDING,
+            created_by=self.member_user,
+        )
+        old_application = Event.objects.create(
+            title='更早活动申请',
+            event_type=Event.EventType.LECTURE,
+            description='超出近三天范围的申请。',
+            location='Lab 804',
+            start_time=now - timedelta(days=6),
+            end_time=now - timedelta(days=6) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=6, minutes=20),
+            checkin_end_time=now - timedelta(days=6) + timedelta(hours=1),
+            status=Event.Status.DRAFT,
+            applicant=self.member_user,
+            review_status=Event.ReviewStatus.REJECTED,
+            created_by=self.member_user,
+        )
+        Event.objects.filter(pk=old_application.pk).update(created_at=now - timedelta(days=6))
+        old_application.refresh_from_db()
+
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        response = self.client.get(reverse('member-event-list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertQuerysetEqual(response.context['events'], [recent_event], transform=lambda event: event)
+        self.assertQuerysetEqual(response.context['my_applications'], [recent_application], transform=lambda event: event)
+        self.assertEqual(response.context['recent_event_total'], 1)
+        self.assertEqual(response.context['recent_application_total'], 1)
+        self.assertContains(response, '近 3 天内已审核通过的活动')
+        self.assertContains(response, '近 3 天提交的申请')
+        self.assertNotIn(old_event.id, [event.id for event in response.context['events']])
+        self.assertNotIn(old_application.id, [event.id for event in response.context['my_applications']])
+
+    def test_member_event_search_modal_keeps_full_event_and_application_history(self):
+        now = timezone.now()
+        public_event = Event.objects.create(
+            title='历史公开活动',
+            event_type=Event.EventType.OTHER,
+            description='用于搜索弹窗。',
+            location='Lab 805',
+            start_time=now - timedelta(days=8),
+            end_time=now - timedelta(days=8) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=8, minutes=20),
+            checkin_end_time=now - timedelta(days=8) + timedelta(hours=1),
+            status=Event.Status.CHECKIN_CLOSED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now - timedelta(days=8),
+        )
+        my_application = Event.objects.create(
+            title='历史活动申请',
+            event_type=Event.EventType.SHARING,
+            description='用于搜索弹窗。',
+            location='Lab 806',
+            start_time=now - timedelta(days=7),
+            end_time=now - timedelta(days=7) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=7, minutes=20),
+            checkin_end_time=now - timedelta(days=7) + timedelta(hours=1),
+            status=Event.Status.DRAFT,
+            applicant=self.member_user,
+            review_status=Event.ReviewStatus.REJECTED,
+            created_by=self.member_user,
+        )
+        Event.objects.filter(pk=my_application.pk).update(created_at=now - timedelta(days=7))
+        my_application.refresh_from_db()
+
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        response = self.client.get(reverse('member-event-list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '搜索活动标题')
+        self.assertContains(response, '可按标题搜索全部已审核活动，以及你提交过的全部活动申请')
+        self.assertEqual(
+            [item['id'] for item in response.context['event_search_choices']],
+            [public_event.id],
+        )
+        self.assertEqual(
+            [item['id'] for item in response.context['application_search_choices']],
+            [my_application.id],
+        )
+
     def test_admin_approval_grants_event_scoped_checkin_management(self):
         event = self.create_pending_application()
 
@@ -1007,6 +1197,153 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertContains(response, '搜索选择系列')
         self.assertContains(response, '选择所属系列')
         self.assertNotContains(response, '<select name="series"', html=False)
+
+    def test_event_list_manage_only_shows_recent_three_days(self):
+        now = timezone.now()
+        visible_today = Event.objects.create(
+            title='今日活动',
+            event_type=Event.EventType.TRAINING,
+            description='应在近三天列表中显示。',
+            location='Lab 701',
+            start_time=now - timedelta(hours=1),
+            end_time=now + timedelta(hours=1),
+            checkin_start_time=now - timedelta(hours=2),
+            checkin_end_time=now + timedelta(minutes=30),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now,
+        )
+        visible_yesterday = Event.objects.create(
+            title='昨日活动',
+            event_type=Event.EventType.TRAINING,
+            description='应在近三天列表中显示。',
+            location='Lab 702',
+            start_time=now - timedelta(days=1),
+            end_time=now - timedelta(days=1) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=1, minutes=20),
+            checkin_end_time=now - timedelta(days=1) + timedelta(hours=1),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now,
+        )
+        visible_two_days_ago = Event.objects.create(
+            title='前天活动',
+            event_type=Event.EventType.LECTURE,
+            description='应在近三天列表中显示。',
+            location='Lab 703',
+            start_time=now - timedelta(days=2),
+            end_time=now - timedelta(days=2) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=2, minutes=20),
+            checkin_end_time=now - timedelta(days=2) + timedelta(hours=1),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now,
+        )
+        hidden_old = Event.objects.create(
+            title='更早活动',
+            event_type=Event.EventType.OTHER,
+            description='不应在近三天列表中显示。',
+            location='Lab 704',
+            start_time=now - timedelta(days=4),
+            end_time=now - timedelta(days=4) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=4, minutes=20),
+            checkin_end_time=now - timedelta(days=4) + timedelta(hours=1),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now,
+        )
+        hidden_future = Event.objects.create(
+            title='未来活动',
+            event_type=Event.EventType.SHARING,
+            description='不应在近三天列表中显示。',
+            location='Lab 705',
+            start_time=now + timedelta(days=1),
+            end_time=now + timedelta(days=1, hours=2),
+            checkin_start_time=now + timedelta(days=1, minutes=-20),
+            checkin_end_time=now + timedelta(days=1, hours=1),
+            status=Event.Status.DRAFT,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+        )
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.get(reverse('event-list-manage'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertQuerysetEqual(
+            response.context['events'],
+            [visible_today, visible_yesterday, visible_two_days_ago],
+            transform=lambda event: event,
+        )
+        self.assertEqual(response.context['recent_event_total'], 3)
+        self.assertContains(response, '搜索活动')
+        self.assertContains(response, '近 3 天活动')
+        self.assertNotIn(hidden_old.id, [event.id for event in response.context['events']])
+        self.assertNotIn(hidden_future.id, [event.id for event in response.context['events']])
+
+    def test_event_list_manage_search_modal_includes_all_event_titles(self):
+        now = timezone.now()
+        recent_event = Event.objects.create(
+            title='近期开会',
+            event_type=Event.EventType.TRAINING,
+            description='近期活动。',
+            location='Lab 706',
+            start_time=now,
+            end_time=now + timedelta(hours=2),
+            checkin_start_time=now - timedelta(minutes=15),
+            checkin_end_time=now + timedelta(minutes=30),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now,
+        )
+        archived_event = Event.objects.create(
+            title='往期讲座',
+            event_type=Event.EventType.LECTURE,
+            description='历史活动。',
+            location='Lab 707',
+            start_time=now - timedelta(days=9),
+            end_time=now - timedelta(days=9) + timedelta(hours=2),
+            checkin_start_time=now - timedelta(days=9, minutes=20),
+            checkin_end_time=now - timedelta(days=9) + timedelta(hours=1),
+            status=Event.Status.CHECKIN_CLOSED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=now,
+            created_by=self.admin_user,
+            published_at=now - timedelta(days=9),
+        )
+
+        self.client.login(username='admin-review', password='AdminPassword2026!')
+        response = self.client.get(reverse('event-list-manage'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '搜索活动名称')
+        self.assertContains(response, '快速进入详情或编辑页')
+        self.assertEqual(
+            [item['id'] for item in response.context['event_search_choices']],
+            [recent_event.id, archived_event.id],
+        )
+        self.assertEqual(
+            [item['title'] for item in response.context['event_search_choices']],
+            ['近期开会', '往期讲座'],
+        )
 
     def test_event_edit_page_prefills_datetime_local_values(self):
         event_start = timezone.now() + timedelta(days=6)

@@ -79,6 +79,7 @@
         overflow: hidden;
         display: grid;
         grid-template-rows: auto auto 1fr auto;
+        min-height: 0;
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: 20px;
@@ -110,9 +111,12 @@
 
     .picker-list {
         overflow: auto;
+        min-height: 0;
         padding: 0 20px 20px;
         display: grid;
         gap: 10px;
+        align-content: start;
+        overscroll-behavior: contain;
     }
 
     .picker-option {
@@ -124,11 +128,14 @@
         gap: 4px;
         text-align: left;
         padding: 14px 16px;
+        min-height: auto;
         border-radius: 14px;
         border: 1px solid var(--border);
         background: #fcfcfc;
         color: var(--foreground);
         cursor: pointer;
+        line-height: 1.45;
+        white-space: normal;
     }
 
     .picker-option:hover,
@@ -139,6 +146,7 @@
 
     .picker-option strong {
         display: block;
+        line-height: 1.35;
     }
 
     .picker-option span {
@@ -146,12 +154,36 @@
         color: var(--muted-foreground);
         font-size: 0.9rem;
         line-height: 1.45;
+        white-space: normal;
+        word-break: break-word;
     }
 
     .picker-selection-note {
         color: var(--muted-foreground);
         font-size: 0.9rem;
         line-height: 1.5;
+    }
+
+    @media (max-width: 768px) {
+        .picker-modal {
+            padding: 16px;
+        }
+
+        .picker-panel {
+            max-height: calc(100vh - 32px);
+        }
+
+        .picker-header,
+        .picker-footer,
+        .picker-search,
+        .picker-list {
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        .picker-list {
+            padding-bottom: 16px;
+        }
     }
 </style>
 <section class="page-hero">

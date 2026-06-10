@@ -4,19 +4,189 @@
 {% block topbar_title %}活动{% endblock %}
 {% block topbar_subtitle %}<div class="topbar-subtitle">队员活动列表</div>{% endblock %}
 
+{% block topbar_actions %}
+    <button class="button ghost" type="button" id="member-event-search-open">搜索活动</button>
+{% endblock %}
+
 {% block content %}
+<style>
+    .member-event-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 18px;
+        align-items: center;
+    }
+
+    .member-event-note {
+        margin-top: 14px;
+        padding: 14px 16px;
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        background: #fcfcfc;
+        color: var(--muted-foreground);
+        line-height: 1.55;
+    }
+
+    .member-event-search-modal[hidden] {
+        display: none;
+    }
+
+    .member-event-search-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(9, 9, 11, 0.45);
+    }
+
+    .member-event-search-panel {
+        width: min(820px, 100%);
+        max-height: min(82vh, 760px);
+        min-height: 0;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+    }
+
+    .member-event-search-header,
+    .member-event-search-footer {
+        padding: 18px 20px;
+    }
+
+    .member-event-search-header {
+        border-bottom: 1px solid var(--border);
+    }
+
+    .member-event-search-footer {
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .member-event-search-input-wrap {
+        padding: 0 20px 18px;
+    }
+
+    .member-event-search-input-wrap input {
+        width: 100%;
+    }
+
+    .member-event-search-results {
+        min-height: 0;
+        overflow: auto;
+        padding: 0 20px 20px;
+        display: grid;
+        gap: 18px;
+        align-content: start;
+        overscroll-behavior: contain;
+    }
+
+    .member-event-search-group {
+        display: grid;
+        gap: 10px;
+    }
+
+    .member-event-search-group-title {
+        font-weight: 700;
+        color: #18181b;
+    }
+
+    .member-event-search-card {
+        display: grid;
+        gap: 8px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #fcfcfc;
+    }
+
+    .member-event-search-main {
+        display: grid;
+        gap: 4px;
+    }
+
+    .member-event-search-title {
+        font-weight: 700;
+        line-height: 1.35;
+    }
+
+    .member-event-search-meta {
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.45;
+        word-break: break-word;
+    }
+
+    .member-event-search-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .member-event-search-empty {
+        padding: 14px 16px;
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        color: var(--muted-foreground);
+        background: #fcfcfc;
+    }
+
+    .member-event-search-footer-note {
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    @media (max-width: 768px) {
+        .member-event-search-modal {
+            padding: 16px;
+        }
+
+        .member-event-search-panel {
+            max-height: calc(100vh - 32px);
+        }
+
+        .member-event-search-header,
+        .member-event-search-footer,
+        .member-event-search-input-wrap,
+        .member-event-search-results {
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        .member-event-search-results {
+            padding-bottom: 16px;
+        }
+    }
+</style>
 <section class="page-hero">
     <h2>活动列表</h2>
     <p>你可以在这里查看近期活动，也可以提交自己想组织的 lecture / 分享会申请；审核通过后，你将获得该活动的签到管理权限。</p>
-    <div class="toolbar">
+    <div class="member-event-actions">
+        <button class="button ghost" type="button" id="member-event-search-hero-open">搜索活动</button>
         <a class="button" href="{% url 'member-event-apply' %}">申请活动</a>
+    </div>
+    <div class="member-event-note">
+        当前页面仅展示开始日期位于 {{ recent_start_date|date:"Y-m-d" }} 至 {% now "Y-m-d" %} 的活动，
+        以及最近 {{ recent_window_days }} 天提交的活动申请。其他记录可通过“搜索活动”弹窗按标题继续查找。
     </div>
 </section>
 
 <section class="card">
     <div class="card-header">
         <h3>全部活动</h3>
-        <span class="card-meta">仅展示已审核通过的活动</span>
+        <span class="card-meta">近 {{ recent_window_days }} 天内已审核通过的活动 · {{ recent_event_total }} 条</span>
     </div>
     <table>
         <thead>
@@ -44,7 +214,7 @@
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="4">暂无活动。</td>
+                    <td colspan="4">近 {{ recent_window_days }} 天内暂无活动，可通过“搜索活动”查找其他记录。</td>
                 </tr>
             {% endfor %}
         </tbody>
@@ -54,7 +224,7 @@
 <section class="card" style="margin-top: 18px;">
     <div class="card-header">
         <h3>我的活动申请</h3>
-        <span class="card-meta">审核通过后可进入签到管理</span>
+        <span class="card-meta">近 {{ recent_window_days }} 天提交的申请 · {{ recent_application_total }} 条</span>
     </div>
     <table>
         <thead>
@@ -90,10 +260,138 @@
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="5">你还没有提交活动申请。</td>
+                    <td colspan="5">近 {{ recent_window_days }} 天内你还没有提交活动申请，可通过“搜索活动”查看更早记录。</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 </section>
+
+<div class="member-event-search-modal" id="member-event-search-modal" hidden>
+    <div class="member-event-search-panel">
+        <div class="member-event-search-header">
+            <h3 style="margin: 0;">搜索活动</h3>
+            <p class="muted" style="margin: 8px 0 0;">可按标题搜索全部已审核活动，以及你提交过的全部活动申请。</p>
+        </div>
+        <div class="member-event-search-input-wrap">
+            <input id="member-event-search-input" type="search" placeholder="搜索活动标题">
+        </div>
+        <div class="member-event-search-results" id="member-event-search-results"></div>
+        <div class="member-event-search-footer">
+            <span class="member-event-search-footer-note" id="member-event-search-footer-note">活动 0 条 · 申请 0 条</span>
+            <button class="button secondary" type="button" id="member-event-search-close">关闭</button>
+        </div>
+    </div>
+</div>
+
+{{ event_search_choices|json_script:"member-event-search-options" }}
+{{ application_search_choices|json_script:"member-application-search-options" }}
+<script>
+    (() => {
+        const eventOptions = JSON.parse(document.getElementById('member-event-search-options').textContent);
+        const applicationOptions = JSON.parse(document.getElementById('member-application-search-options').textContent);
+        const modal = document.getElementById('member-event-search-modal');
+        const openButtons = [
+            document.getElementById('member-event-search-open'),
+            document.getElementById('member-event-search-hero-open'),
+        ].filter(Boolean);
+        const closeButton = document.getElementById('member-event-search-close');
+        const input = document.getElementById('member-event-search-input');
+        const results = document.getElementById('member-event-search-results');
+        const footerNote = document.getElementById('member-event-search-footer-note');
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function renderCards(items, type) {
+            if (!items.length) {
+                return '<div class="member-event-search-empty">没有找到匹配记录。</div>';
+            }
+
+            return items.map((item) => {
+                if (type === 'event') {
+                    return `
+                        <div class="member-event-search-card">
+                            <div class="member-event-search-main">
+                                <a class="member-event-search-title" href="${escapeHtml(item.detail_url)}">${escapeHtml(item.title)}</a>
+                                <div class="member-event-search-meta">${escapeHtml(item.event_type)} · ${escapeHtml(item.start_date)} ${escapeHtml(item.start_time)} · ${escapeHtml(item.location)}</div>
+                                <div class="member-event-search-meta">${escapeHtml(item.status)}</div>
+                            </div>
+                            <div class="member-event-search-actions">
+                                <a class="quick-link" href="${escapeHtml(item.detail_url)}">查看活动</a>
+                            </div>
+                        </div>
+                    `;
+                }
+                return `
+                    <div class="member-event-search-card">
+                        <div class="member-event-search-main">
+                            <div class="member-event-search-title">${escapeHtml(item.title)}</div>
+                            <div class="member-event-search-meta">${escapeHtml(item.start_date)} ${escapeHtml(item.start_time)} · ${escapeHtml(item.location)}</div>
+                            <div class="member-event-search-meta">${escapeHtml(item.review_status)} · ${escapeHtml(item.review_note)} · 签到 ${escapeHtml(item.checkin_total)}</div>
+                        </div>
+                        <div class="member-event-search-actions">
+                            ${item.manage_url ? `<a class="quick-link" href="${escapeHtml(item.manage_url)}">签到管理</a>` : '<span class="muted">审核后开放</span>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderResults(keyword = '') {
+            const query = keyword.trim().toLowerCase();
+            const filteredEvents = eventOptions.filter((option) => (
+                !query || option.title.toLowerCase().includes(query)
+            ));
+            const filteredApplications = applicationOptions.filter((option) => (
+                !query || option.title.toLowerCase().includes(query)
+            ));
+
+            footerNote.textContent = `活动 ${filteredEvents.length} 条 · 申请 ${filteredApplications.length} 条`;
+            results.innerHTML = `
+                <div class="member-event-search-group">
+                    <div class="member-event-search-group-title">全部活动</div>
+                    ${renderCards(filteredEvents, 'event')}
+                </div>
+                <div class="member-event-search-group">
+                    <div class="member-event-search-group-title">我的活动申请</div>
+                    ${renderCards(filteredApplications, 'application')}
+                </div>
+            `;
+        }
+
+        function openModal() {
+            modal.hidden = false;
+            input.value = '';
+            renderResults('');
+            input.focus();
+        }
+
+        function closeModal() {
+            modal.hidden = true;
+        }
+
+        openButtons.forEach((button) => {
+            button.addEventListener('click', openModal);
+        });
+        closeButton.addEventListener('click', closeModal);
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+        input.addEventListener('input', () => renderResults(input.value));
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !modal.hidden) {
+                closeModal();
+            }
+        });
+    })();
+</script>
 {% endblock %}
