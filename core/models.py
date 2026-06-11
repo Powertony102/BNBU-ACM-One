@@ -233,7 +233,7 @@ class Event(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['series', 'series_order'],
-                condition=models.Q(series__isnull=False),
+                condition=models.Q(series__isnull=False, series_order__isnull=False),
                 name='unique_series_order',
             ),
         ]

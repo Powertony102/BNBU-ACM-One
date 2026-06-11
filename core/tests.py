@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 from django.core import mail
 from django.core.management import call_command
+from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -2721,3 +2722,67 @@ class RuleManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '跟随规则管理中的默认权重')
         self.assertContains(response, '1.25')
+
+
+class EventSeriesOrderConstraintTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username='order-admin',
+            password='AdminPassword2026!',
+            email='order-admin@mail.bnbu.edu.cn',
+            role=User.Roles.ADMIN,
+            is_staff=True,
+        )
+        AdminProfile.objects.create(
+            user=self.admin_user,
+            display_name='序号测试管理员',
+            admin_level=AdminProfile.Level.ADMIN,
+            status=AdminProfile.Status.ACTIVE,
+        )
+        self.series = EventSeries.objects.create(
+            title='约束测试系列',
+            series_type=EventSeries.SeriesType.TRAINING,
+            status=EventSeries.Status.PUBLISHED,
+            expected_event_count=10,
+            created_by=self.admin_user,
+        )
+        self.base_time = timezone.now() + timedelta(days=1)
+
+    def _make_event(self, title, series=None, series_order=None):
+        return Event.objects.create(
+            title=title,
+            event_type=Event.EventType.TRAINING,
+            location='Lab',
+            series=series,
+            series_order=series_order,
+            start_time=self.base_time,
+            end_time=self.base_time + timedelta(hours=2),
+            checkin_start_time=self.base_time - timedelta(minutes=15),
+            checkin_end_time=self.base_time + timedelta(hours=1),
+            status=Event.Status.PUBLISHED,
+            review_status=Event.ReviewStatus.APPROVED,
+            reviewed_by=self.admin_user,
+            reviewed_at=self.base_time - timedelta(hours=1),
+            created_by=self.admin_user,
+            published_at=self.base_time - timedelta(hours=1),
+        )
+
+    def test_multiple_events_same_series_without_order(self):
+        e1 = self._make_event('无序号活动1', series=self.series, series_order=None)
+        e2 = self._make_event('无序号活动2', series=self.series, series_order=None)
+        self.assertEqual(Event.objects.filter(series=self.series, series_order__isnull=True).count(), 2)
+
+    def test_duplicate_series_order_raises_integrity_error(self):
+        self._make_event('有序号活动1', series=self.series, series_order=1)
+        with self.assertRaises(IntegrityError):
+            self._make_event('有序号活动2', series=self.series, series_order=1)
+
+    def test_different_series_order_is_allowed(self):
+        e1 = self._make_event('序号1', series=self.series, series_order=1)
+        e2 = self._make_event('序号2', series=self.series, series_order=2)
+        self.assertEqual(Event.objects.filter(series=self.series).count(), 2)
+
+    def test_events_without_series_can_share_order(self):
+        e1 = self._make_event('无系列A', series=None, series_order=1)
+        e2 = self._make_event('无系列B', series=None, series_order=1)
+        self.assertEqual(Event.objects.filter(series__isnull=True).count(), 2)
