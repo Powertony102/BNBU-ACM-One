@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .competition import sync_event_series_completion, sync_member_competition_profile
-from .forms import ContestTeamForm
+from .forms import ContestTeamForm, EventForm
 from .models import (
     AdminProfile,
     AuditLog,
@@ -2815,6 +2815,56 @@ class EventSeriesOrderConstraintTests(TestCase):
             },
             follow=True,
         )
+        self.assertEqual(response.status_code, 200)
+        event.refresh_from_db()
+        self.assertIsNone(event.series_order)
+
+    def test_event_form_allows_blank_series_order_when_series_is_selected(self):
+        self._make_event('同系列空序号活动', series=self.series, series_order=None)
+        event = self._make_event('表单校验活动', series=self.series, series_order=1)
+        form = EventForm(
+            data={
+                'title': event.title,
+                'event_type': event.event_type,
+                'description': '',
+                'location': event.location,
+                'series': str(self.series.id),
+                'series_order': '',
+                'start_time': self.base_time.strftime('%Y-%m-%dT%H:%M'),
+                'end_time': (self.base_time + timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_start_time': (self.base_time - timedelta(minutes=15)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_end_time': (self.base_time + timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'status': Event.Status.PUBLISHED,
+            },
+            instance=event,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        self.assertIsNone(form.cleaned_data['series_order'])
+
+    def test_clear_series_order_via_view_when_same_series_has_blank_order_event(self):
+        self._make_event('同系列空序号活动2', series=self.series, series_order=None)
+        event = self._make_event('视图清空并存活动', series=self.series, series_order=2)
+        self.client.login(username='order-admin', password='AdminPassword2026!')
+
+        response = self.client.post(
+            reverse('event-edit', args=[event.id]),
+            {
+                'title': event.title,
+                'event_type': event.event_type,
+                'description': '',
+                'location': event.location,
+                'series': self.series.id,
+                'series_order': '',
+                'start_time': self.base_time.strftime('%Y-%m-%dT%H:%M'),
+                'end_time': (self.base_time + timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_start_time': (self.base_time - timedelta(minutes=15)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_end_time': (self.base_time + timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'status': Event.Status.PUBLISHED,
+            },
+            follow=True,
+        )
+
         self.assertEqual(response.status_code, 200)
         event.refresh_from_db()
         self.assertIsNone(event.series_order)

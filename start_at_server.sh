@@ -18,6 +18,7 @@ GUNICORN_WORKERS=3                                    # Gunicorn 工作进程数
 WWW_USER="www"                                        # 宝塔默认用户
 WWW_GROUP="www"                                       # 宝塔默认用户组
 LOG_DIR="${BACKEND_DIR}/logs"                         # 日志目录
+ENV_FILE="/etc/${SERVICE_NAME}.env"                   # systemd 环境变量文件
 
 # Django 生产环境变量
 export DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY:-$(python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')}"
@@ -102,6 +103,16 @@ echo "[5/6] 创建 systemd 服务..."
 mkdir -p "${LOG_DIR}"
 chown "${WWW_USER}:${WWW_GROUP}" "${LOG_DIR}"
 
+cat > "${ENV_FILE}" << EOF
+DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+DJANGO_DEBUG=False
+DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
+DJANGO_CSRF_TRUSTED_ORIGINS=${DJANGO_CSRF_TRUSTED_ORIGINS}
+RESEND_API_KEY=${RESEND_API_KEY}
+DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
+EOF
+chmod 600 "${ENV_FILE}"
+
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=ACM System Django Gunicorn Service
@@ -112,12 +123,7 @@ User=${WWW_USER}
 Group=${WWW_GROUP}
 WorkingDirectory=${BACKEND_DIR}
 Environment="PATH=${VENV_DIR}/bin"
-Environment="DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}"
-Environment="DJANGO_DEBUG=False"
-Environment="DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}"
-Environment="DJANGO_CSRF_TRUSTED_ORIGINS=${DJANGO_CSRF_TRUSTED_ORIGINS}"
-Environment="RESEND_API_KEY=${RESEND_API_KEY}"
-Environment="DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}"
+EnvironmentFile=${ENV_FILE}
 ExecStart=${VENV_DIR}/bin/gunicorn one_bnbu_acm.wsgi:application \\
     --workers ${GUNICORN_WORKERS} \\
     --bind 127.0.0.1:${GUNICORN_PORT} \\
