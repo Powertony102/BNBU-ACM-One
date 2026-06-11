@@ -182,12 +182,6 @@
                 {{ form.rank_label.errors }}
                 {% if form.rank_label.help_text %}<span class="helptext">{{ form.rank_label.help_text }}</span>{% endif %}
             </p>
-            <p>
-                {{ form.result_tier.label_tag }}
-                {{ form.result_tier }}
-                {{ form.result_tier.errors }}
-                {% if form.result_tier.help_text %}<span class="helptext">{{ form.result_tier.help_text }}</span>{% endif %}
-            </p>
             {% if form.evidence_url %}
                 <p>
                     {{ form.evidence_url.label_tag }}

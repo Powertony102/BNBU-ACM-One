@@ -42,7 +42,6 @@
             <p>{{ form.award_type.label_tag }}{{ form.award_type }}{% for error in form.award_type.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
             <p>{{ form.award_label.label_tag }}{{ form.award_label }}{% for error in form.award_label.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
             <p>{{ form.rank_label.label_tag }}{{ form.rank_label }}{% for error in form.rank_label.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
-            <p>{{ form.result_tier.label_tag }}{{ form.result_tier }}{% for error in form.result_tier.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
             <p>{{ form.manual_bonus.label_tag }}{{ form.manual_bonus }}{% if form.manual_bonus.help_text %}<small>{{ form.manual_bonus.help_text }}</small>{% endif %}{% for error in form.manual_bonus.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
             <p>{{ form.verified }} <label for="{{ form.verified.id_for_label }}" style="display: inline;">{{ form.verified.label }}</label>{% for error in form.verified.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>
             <p>{{ form.evidence_url.label_tag }}{{ form.evidence_url }}{% for error in form.evidence_url.errors %}<small style="color: #b42318;">{{ error }}</small>{% endfor %}</p>

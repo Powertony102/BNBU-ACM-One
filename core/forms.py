@@ -905,7 +905,6 @@ class ContestResultForm(forms.ModelForm):
             'award_type',
             'award_label',
             'rank_label',
-            'result_tier',
             'manual_bonus',
             'verified',
             'evidence_url',
@@ -916,7 +915,6 @@ class ContestResultForm(forms.ModelForm):
             'award_type': '奖项类型',
             'award_label': '奖项展示文案',
             'rank_label': '名次描述',
-            'result_tier': '成绩层级',
             'manual_bonus': '人工加分',
             'evidence_url': '证据链接',
             'note': '备注',
@@ -996,7 +994,6 @@ class ContestSubmissionForm(forms.ModelForm):
             'award_type',
             'award_label',
             'rank_label',
-            'result_tier',
             'evidence_url',
             'submission_note',
         ]
@@ -1013,7 +1010,6 @@ class ContestSubmissionForm(forms.ModelForm):
             'award_type': '奖项类型',
             'award_label': '奖项展示文案',
             'rank_label': '名次描述',
-            'result_tier': '成绩层级',
             'evidence_url': '证据链接',
             'submission_note': '补充说明',
         }

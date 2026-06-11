@@ -383,18 +383,11 @@ class ContestResult(models.Model):
         PARTICIPATION = 'participation', '参赛'
         CUSTOM = 'custom', '自定义'
 
-    class ResultTier(models.TextChoices):
-        CHAMPION = 'champion', '顶尖'
-        HIGH = 'high', '高'
-        MEDIUM = 'medium', '中'
-        ENTRY = 'entry', '入门'
-
     contest = models.ForeignKey(Contest, on_delete=models.CASCADE, related_name='results')
     team = models.ForeignKey(ContestTeam, on_delete=models.CASCADE, related_name='results')
     award_type = models.CharField(max_length=20, choices=AwardType.choices, default=AwardType.PARTICIPATION)
     award_label = models.CharField(max_length=100, blank=True)
     rank_label = models.CharField(max_length=100, blank=True)
-    result_tier = models.CharField(max_length=20, choices=ResultTier.choices, default=ResultTier.ENTRY)
     manual_bonus = models.IntegerField(default=0)
     rating_delta = models.IntegerField(default=0)
     verified = models.BooleanField(default=False)
@@ -656,7 +649,6 @@ class ContestSubmission(models.Model):
     award_type = models.CharField(max_length=20, choices=ContestResult.AwardType.choices, default=ContestResult.AwardType.PARTICIPATION)
     award_label = models.CharField(max_length=100, blank=True)
     rank_label = models.CharField(max_length=100, blank=True)
-    result_tier = models.CharField(max_length=20, choices=ContestResult.ResultTier.choices, default=ContestResult.ResultTier.ENTRY)
     evidence_url = models.URLField(blank=True)
     submission_note = models.TextField(blank=True)
     review_status = models.CharField(max_length=20, choices=ReviewStatus.choices, default=ReviewStatus.PENDING)

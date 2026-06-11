@@ -137,8 +137,6 @@
   奖项展示文案
 - `rank_label`
   名次描述，允许自由文本
-- `result_tier`
-  成绩层级，用于评分
 - `rating_delta`
   本场为队员带来的基础积分变化，可由系统计算后落库
 - `verified`
@@ -156,8 +154,6 @@
 
 - `award_type`
   `gold / silver / bronze / honorable / finalist / participation / custom`
-- `result_tier`
-  `champion / high / medium / entry`
 
 说明：
 

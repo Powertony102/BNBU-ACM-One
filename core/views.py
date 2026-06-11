@@ -1000,7 +1000,6 @@ def approve_contest_submission(submission, cleaned_data, operator):
     result.award_type = cleaned_data['award_type']
     result.award_label = cleaned_data['award_label'] or dict(ContestResult.AwardType.choices).get(cleaned_data['award_type'], '')
     result.rank_label = cleaned_data['rank_label']
-    result.result_tier = cleaned_data['result_tier']
     result.evidence_url = cleaned_data['evidence_url']
     result.note = cleaned_data['submission_note']
     apply_contest_result_verification(result, True, operator)

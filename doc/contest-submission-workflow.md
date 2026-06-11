@@ -116,7 +116,6 @@
 - `award_type`
 - `award_label`
 - `rank_label`
-- `result_tier`
 - `evidence_url`
 - `submission_note`
 - `review_status`
