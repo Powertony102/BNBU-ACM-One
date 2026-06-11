@@ -2786,3 +2786,35 @@ class EventSeriesOrderConstraintTests(TestCase):
         e1 = self._make_event('无系列A', series=None, series_order=1)
         e2 = self._make_event('无系列B', series=None, series_order=1)
         self.assertEqual(Event.objects.filter(series__isnull=True).count(), 2)
+
+    def test_clear_series_order_via_edit(self):
+        event = self._make_event('待编辑活动', series=self.series, series_order=1)
+        event.series_order = None
+        event.save()
+        event.refresh_from_db()
+        self.assertIsNone(event.series_order)
+        self.assertEqual(event.series_id, self.series.id)
+
+    def test_clear_series_order_via_view(self):
+        event = self._make_event('视图编辑活动', series=self.series, series_order=1)
+        self.client.login(username='order-admin', password='AdminPassword2026!')
+        response = self.client.post(
+            reverse('event-edit', args=[event.id]),
+            {
+                'title': event.title,
+                'event_type': event.event_type,
+                'description': '',
+                'location': event.location,
+                'series': self.series.id,
+                'series_order': '',
+                'start_time': (self.base_time).strftime('%Y-%m-%dT%H:%M'),
+                'end_time': (self.base_time + timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_start_time': (self.base_time - timedelta(minutes=15)).strftime('%Y-%m-%dT%H:%M'),
+                'checkin_end_time': (self.base_time + timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'status': Event.Status.PUBLISHED,
+            },
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        event.refresh_from_db()
+        self.assertIsNone(event.series_order)
