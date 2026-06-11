@@ -7,10 +7,13 @@
 <p>请使用 10 位数字学号作为用户名，并填写学校邮箱、入学年份和英文专业代码。</p>
 <form method="post" style="margin-top: 8px;">
     {% csrf_token %}
+    {% if next %}
+        <input type="hidden" name="next" value="{{ next }}">
+    {% endif %}
     {{ form.as_p }}
     <div class="auth-actions">
         <button type="submit">创建账号</button>
-        <p class="auth-footnote">已经有账号？<a class="inline-link" href="{% url 'login' %}">返回登录</a></p>
+        <p class="auth-footnote">已经有账号？<a class="inline-link" href="{% url 'login' %}{% if next %}?next={{ next|urlencode }}{% endif %}">返回登录</a></p>
     </div>
 </form>
 {% endblock %}

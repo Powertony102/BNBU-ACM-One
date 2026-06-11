@@ -20,6 +20,7 @@ from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 import qrcode
 
 from .competition import (
@@ -637,6 +638,17 @@ def role_redirect(user):
     return redirect('management-dashboard')
 
 
+def get_safe_next_url(request, default=''):
+    next_url = request.POST.get('next') or request.GET.get('next') or ''
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return next_url
+    return default
+
+
 def require_member(user):
     return user.is_authenticated and user.role == User.Roles.MEMBER
 
@@ -1018,17 +1030,23 @@ def approve_contest_submission(submission, cleaned_data, operator):
 
 
 def login_view(request):
+    next_url = get_safe_next_url(request)
     if request.user.is_authenticated:
+        if next_url:
+            return redirect(next_url)
         return role_redirect(request.user)
     form = LoginForm(request, data=request.POST or None)
     if request.method == 'POST' and form.is_valid():
         login(request, form.get_user())
-        return redirect(request.GET.get('next') or request.POST.get('next') or reverse('home'))
-    return render(request, 'core/login.html', {'form': form, 'next': request.GET.get('next', '')})
+        return redirect(next_url or reverse('home'))
+    return render(request, 'core/login.html', {'form': form, 'next': next_url})
 
 
 def register_view(request):
+    next_url = get_safe_next_url(request)
     if request.user.is_authenticated:
+        if next_url:
+            return redirect(next_url)
         return role_redirect(request.user)
     form = MemberRegistrationForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
@@ -1036,8 +1054,8 @@ def register_view(request):
         login(request, user)
         log_action(user, 'register_member', 'MemberProfile', user.member_profile.id, f'user={user.username}')
         messages.success(request, '注册成功，欢迎加入 One BNBU-ACM。')
-        return redirect('member-dashboard')
-    return render(request, 'core/register.html', {'form': form})
+        return redirect(next_url or reverse('member-dashboard'))
+    return render(request, 'core/register.html', {'form': form, 'next': next_url})
 
 
 def password_reset_request_view(request):
@@ -1323,30 +1341,7 @@ def member_event_detail(request, event_id):
 def member_event_checkin(request, event_id):
     if not require_member(request.user):
         return HttpResponseForbidden('仅队员可访问。')
-    if request.method != 'POST':
-        return HttpResponseForbidden('仅支持 POST 签到。')
-    event = get_object_or_404(Event.objects.filter(review_status=Event.ReviewStatus.APPROVED), pk=event_id)
-    profile = get_object_or_404(MemberProfile, user=request.user)
-    if not event.is_checkin_open():
-        messages.error(request, '当前活动未开放签到。')
-        return redirect('member-event-detail', event_id=event.id)
-    if CheckInRecord.objects.filter(
-        member=profile,
-        event=event,
-        status=CheckInRecord.Status.VALID,
-    ).exists():
-        messages.warning(request, '你已经签到过这场活动。')
-        return redirect('member-event-detail', event_id=event.id)
-    checkin = CheckInRecord.objects.create(
-        member=profile,
-        event=event,
-        checkin_method=CheckInRecord.Method.WEB,
-        created_by=request.user,
-    )
-    sync_series_completion_for_member(profile, event.series)
-    log_action(request.user, 'member_checkin', 'Event', event.id, f'checkin_id={checkin.id}')
-    messages.success(request, '签到成功。')
-    return redirect('member-event-detail', event_id=event.id)
+    return HttpResponseForbidden('活动仅支持通过二维码签到。')
 
 
 @login_required

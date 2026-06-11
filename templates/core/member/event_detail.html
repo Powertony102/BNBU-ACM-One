@@ -34,14 +34,11 @@
             <p style="margin: 0 0 8px;"><strong>你已完成签到</strong></p>
             <p class="muted">{{ existing_checkin.checkin_time|date:"Y-m-d H:i" }} · {{ existing_checkin.get_checkin_method_display }}</p>
         {% elif is_checkin_open %}
-            <p style="margin: 0 0 14px;"><strong>当前处于可签到时间窗口</strong></p>
-            <form method="post" action="{% url 'member-event-checkin' event.id %}">
-                {% csrf_token %}
-                <button type="submit">立即签到</button>
-            </form>
+            <p style="margin: 0 0 8px;"><strong>当前处于可签到时间窗口</strong></p>
+            <p class="muted">请使用活动二维码进入签到页完成签到；当前不支持从活动详情页直接签到。</p>
         {% else %}
             <p style="margin: 0 0 8px;"><strong>当前不可签到</strong></p>
-            <p class="muted">请等待签到窗口开放，或联系管理员确认活动状态。</p>
+            <p class="muted">请等待签到窗口开放后使用活动二维码签到，或联系管理员确认活动状态。</p>
         {% endif %}
     </article>
 </section>

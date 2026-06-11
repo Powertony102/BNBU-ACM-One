@@ -1475,6 +1475,84 @@ class EventApplicationWorkflowTests(TestCase):
         self.assertEqual(checkin.checkin_method, CheckInRecord.Method.QR)
         self.assertEqual(checkin.source_qr_code, qr_code)
 
+    def test_member_event_detail_does_not_offer_web_checkin(self):
+        event = self.create_live_event(title='仅二维码签到活动')
+
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        response = self.client.get(reverse('member-event-detail', args=[event.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '请使用活动二维码进入签到页完成签到')
+        self.assertNotContains(response, '立即签到')
+        self.assertNotContains(response, reverse('member-event-checkin', args=[event.id]))
+
+    def test_member_event_checkin_endpoint_rejects_web_checkin(self):
+        event = self.create_live_event(title='禁止网页签到活动')
+
+        self.client.login(username='2430026001', password='MemberPassword2026!')
+        response = self.client.post(reverse('member-event-checkin', args=[event.id]))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('活动仅支持通过二维码签到。', response.content.decode())
+        self.assertFalse(
+            CheckInRecord.objects.filter(
+                event=event,
+                member__user=self.member_user,
+                checkin_method=CheckInRecord.Method.WEB,
+            ).exists()
+        )
+
+    def test_member_can_register_from_qr_flow_and_return_to_resume_link(self):
+        event = self.create_live_event(title='扫码注册回跳活动')
+        qr_code = EventQRCode.objects.create(
+            event=event,
+            expires_at=timezone.now() + timedelta(minutes=30),
+            created_by=self.admin_user,
+        )
+        qr_code.url = 'http://testserver' + reverse('qr-entry', args=[qr_code.token])
+        qr_code.save(update_fields=['url'])
+
+        first_response = self.client.get(reverse('qr-entry', args=[qr_code.token]))
+        self.assertEqual(first_response.status_code, 302)
+
+        login_redirect = urlparse(first_response.url)
+        resume_path = parse_qs(login_redirect.query)['next'][0]
+        resume_match = re.match(r'^/qr/resume/(?P<token>[^/]+)/$', resume_path)
+        self.assertIsNotNone(resume_match)
+        resume_token = resume_match.group('token')
+
+        register_page = self.client.get(reverse('register'), {'next': resume_path})
+        self.assertEqual(register_page.status_code, 200)
+        self.assertContains(register_page, f'value="{resume_path}"', html=False)
+
+        register_response = self.client.post(
+            reverse('register'),
+            {
+                'real_name': '扫码新队员',
+                'username': '2430026123',
+                'enrollment_year': 2024,
+                'major': 'cst',
+                'school_email': 'u430026123@mail.bnbu.edu.cn',
+                'password1': 'MemberPassword2026!',
+                'password2': 'MemberPassword2026!',
+                'next': resume_path,
+            },
+            follow=True,
+        )
+        self.assertRedirects(register_response, resume_path)
+        self.assertContains(register_response, '确认扫码签到')
+
+        checkin_response = self.client.post(
+            reverse('qr-resume-checkin', args=[resume_token]),
+            follow=True,
+        )
+        self.assertEqual(checkin_response.status_code, 200)
+        self.assertContains(checkin_response, '扫码签到成功。')
+
+        checkin = CheckInRecord.objects.get(event=event, member__user__username='2430026123')
+        self.assertEqual(checkin.checkin_method, CheckInRecord.Method.QR)
+        self.assertEqual(checkin.source_qr_code, qr_code)
+
 
 class BootstrapDemoCommandTests(TestCase):
     def test_bootstrap_demo_sets_user_email_for_seed_accounts(self):
