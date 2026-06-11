@@ -2752,6 +2752,17 @@ def event_detail_manage(request, event_id):
             'can_review_event': can_review,
             'review_form': EventReviewForm(initial={'review_note': event.review_note}),
             'manual_checkin_form': ManualCheckInForm(event),
+            'manual_checkin_member_choices': [
+                {
+                    'id': m.id,
+                    'real_name': m.real_name,
+                    'student_id': m.student_id,
+                    'username': m.user.username,
+                    'major': m.major or '',
+                    'enrollment_year': m.enrollment_year,
+                }
+                for m in MemberProfile.objects.select_related('user').filter(status=MemberProfile.Status.ACTIVE)
+            ],
         },
     )
 
@@ -2905,22 +2916,29 @@ def event_manual_checkin(request, event_id):
             for error in field_errors:
                 messages.error(request, error)
         return redirect('event-detail-manage', event_id=event.id)
-    checkin = CheckInRecord.objects.create(
-        member=form.member_profile,
-        event=event,
-        checkin_method=CheckInRecord.Method.MANUAL,
-        remark=form.cleaned_data['remark'],
-        created_by=request.user,
-    )
-    sync_series_completion_for_member(form.member_profile, event.series)
-    log_action(
-        request.user,
-        'manual_checkin',
-        'Event',
-        event.id,
-        f'checkin_id={checkin.id};member={form.member_profile.student_id}',
-    )
-    messages.success(request, '已完成手动补签。')
+    remark = form.cleaned_data['remark']
+    count = 0
+    for member in form.member_profiles:
+        checkin = CheckInRecord.objects.create(
+            member=member,
+            event=event,
+            checkin_method=CheckInRecord.Method.MANUAL,
+            remark=remark,
+            created_by=request.user,
+        )
+        sync_series_completion_for_member(member, event.series)
+        log_action(
+            request.user,
+            'manual_checkin',
+            'Event',
+            event.id,
+            f'checkin_id={checkin.id};member={member.student_id}',
+        )
+        count += 1
+    if form.skipped:
+        skipped_names = '、'.join(m.real_name for m in form.skipped)
+        messages.warning(request, f'已跳过已有有效签到记录的队员：{skipped_names}')
+    messages.success(request, f'已完成 {count} 人的手动补签。')
     return redirect('event-detail-manage', event_id=event.id)
 
 

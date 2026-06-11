@@ -79,6 +79,161 @@
             min-width: 100%;
         }
     }
+
+    .picker-modal[hidden] {
+        display: none;
+    }
+
+    .picker-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(9, 9, 11, 0.45);
+    }
+
+    .picker-panel {
+        width: min(760px, 100%);
+        max-height: min(78vh, 720px);
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        min-height: 0;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+    }
+
+    .picker-header,
+    .picker-footer {
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .picker-footer {
+        border-bottom: 0;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .picker-search {
+        padding: 0 20px 18px;
+    }
+
+    .picker-search input {
+        width: 100%;
+    }
+
+    .picker-list {
+        overflow: auto;
+        min-height: 0;
+        padding: 0 20px 20px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        overscroll-behavior: contain;
+    }
+
+    .picker-option {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 4px;
+        text-align: left;
+        padding: 14px 16px;
+        min-height: auto;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #fcfcfc;
+        color: var(--foreground);
+        cursor: pointer;
+        line-height: 1.45;
+        white-space: normal;
+    }
+
+    .picker-option:hover,
+    .picker-option.active {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+    }
+
+    .picker-option strong {
+        display: block;
+        line-height: 1.35;
+    }
+
+    .picker-option span {
+        display: block;
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.45;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .picker-selection-note {
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    .picker-meta {
+        padding: 12px 14px;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        background: #fcfcfc;
+        color: var(--muted-foreground);
+    }
+
+    .manual-checkin-selected {
+        padding: 12px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #f8fafc;
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .manual-checkin-selected .selected-name {
+        font-weight: 600;
+    }
+
+    .manual-checkin-selected .selected-meta {
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+    }
+
+    @media (max-width: 768px) {
+        .picker-modal {
+            padding: 16px;
+        }
+
+        .picker-panel {
+            max-height: calc(100vh - 32px);
+        }
+
+        .picker-header,
+        .picker-footer,
+        .picker-search,
+        .picker-list {
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        .picker-list {
+            padding-bottom: 16px;
+        }
+    }
 </style>
 
 <section class="page-hero">
@@ -276,14 +431,157 @@
             <h3>手动补签</h3>
             <span class="card-meta">管理员、活动申请人或已指定签到管理员可操作</span>
         </div>
-        <form method="post" action="{% url 'event-manual-checkin' event.id %}">
+        <form method="post" action="{% url 'event-manual-checkin' event.id %}" id="manual-checkin-form">
             {% csrf_token %}
-            {{ manual_checkin_form.as_p }}
+            {{ manual_checkin_form.member_ids }}
+            <div class="manual-checkin-selected" id="manual-checkin-selected">
+                <span class="selected-name" id="manual-checkin-label">未选择队员</span>
+                <span class="selected-meta" id="manual-checkin-meta">请点击下方按钮搜索并选择队员，支持多选。</span>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 16px;">
+                <button class="button secondary" type="button" id="manual-checkin-open">搜索队员</button>
+            </div>
+            <p>
+                <label for="id_remark">补签说明</label>
+                {{ manual_checkin_form.remark }}
+            </p>
             <div class="inline-actions">
                 <button type="submit">补签入库</button>
             </div>
         </form>
     </section>
+
+    <div class="picker-modal" id="manual-checkin-modal" hidden>
+        <div class="picker-panel">
+            <div class="picker-header">
+                <h3 style="margin: 0;">选择队员</h3>
+                <p class="muted" style="margin: 8px 0 0;">可按姓名、学号或用户名搜索，点击添加或取消，支持多选。</p>
+            </div>
+            <div class="picker-search">
+                <input id="manual-checkin-search" type="search" placeholder="搜索姓名 / 学号 / 用户名 / 专业">
+            </div>
+            <div class="picker-list" id="manual-checkin-list"></div>
+            <div class="picker-footer">
+                <span class="picker-selection-note" id="manual-checkin-footer-note">已选择 0 人</span>
+                <button class="button ghost" type="button" id="manual-checkin-clear">清空选择</button>
+                <button class="button secondary" type="button" id="manual-checkin-close">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    {{ manual_checkin_member_choices|json_script:"manual-checkin-member-options" }}
+    <script>
+        (() => {
+            const hiddenInput = document.getElementById('id_member_ids');
+            const openButton = document.getElementById('manual-checkin-open');
+            const closeButton = document.getElementById('manual-checkin-close');
+            const clearButton = document.getElementById('manual-checkin-clear');
+            const modal = document.getElementById('manual-checkin-modal');
+            const searchInput = document.getElementById('manual-checkin-search');
+            const list = document.getElementById('manual-checkin-list');
+            const label = document.getElementById('manual-checkin-label');
+            const meta = document.getElementById('manual-checkin-meta');
+            const footerNote = document.getElementById('manual-checkin-footer-note');
+            const rawOptions = JSON.parse(document.getElementById('manual-checkin-member-options').textContent);
+            let selectedIds = (hiddenInput.value || '').split(',').filter(Boolean);
+
+            function syncHiddenInput() {
+                hiddenInput.value = selectedIds.join(',');
+            }
+
+            function getSelectedOptions() {
+                return rawOptions.filter((option) => selectedIds.includes(String(option.id)));
+            }
+
+            function updateSelectedSummary() {
+                const selected = getSelectedOptions();
+                if (selected.length) {
+                    label.textContent = `已选择 ${selected.length} 人`;
+                    meta.textContent = selected
+                        .map((o) => `${o.real_name} (${o.student_id})`)
+                        .join('、');
+                    footerNote.textContent = `已选择 ${selected.length} 人`;
+                } else {
+                    label.textContent = '未选择队员';
+                    meta.textContent = '请点击下方按钮搜索并选择队员，支持多选。';
+                    footerNote.textContent = '已选择 0 人';
+                }
+            }
+
+            function renderList(keyword = '') {
+                const query = keyword.trim().toLowerCase();
+                const filtered = rawOptions.filter((option) => {
+                    if (!query) {
+                        return true;
+                    }
+                    return [option.real_name, option.student_id, option.username, option.major]
+                        .filter(Boolean)
+                        .some((value) => value.toLowerCase().includes(query));
+                });
+
+                if (!filtered.length) {
+                    list.innerHTML = '<div class="picker-meta">没有找到匹配的队员。</div>';
+                    return;
+                }
+
+                list.innerHTML = filtered.map((option) => {
+                    const isSelected = selectedIds.includes(String(option.id));
+                    return `
+                        <button
+                            class="picker-option ${isSelected ? 'active' : ''}"
+                            type="button"
+                            data-id="${option.id}"
+                            aria-pressed="${isSelected ? 'true' : 'false'}"
+                        >
+                            <strong>${option.real_name} (${option.student_id})</strong>
+                            <span>用户名 ${option.username} · ${option.major || '未填写专业'} · ${option.enrollment_year || ''}级${isSelected ? ' · 已选择' : ''}</span>
+                        </button>
+                    `;
+                }).join('');
+
+                list.querySelectorAll('[data-id]').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        const targetId = button.dataset.id;
+                        if (selectedIds.includes(targetId)) {
+                            selectedIds = selectedIds.filter((id) => id !== targetId);
+                        } else {
+                            selectedIds = [...selectedIds, targetId];
+                        }
+                        syncHiddenInput();
+                        updateSelectedSummary();
+                        renderList(searchInput.value);
+                    });
+                });
+            }
+
+            openButton.addEventListener('click', () => {
+                modal.hidden = false;
+                searchInput.value = '';
+                renderList('');
+                searchInput.focus();
+            });
+
+            closeButton.addEventListener('click', () => {
+                modal.hidden = true;
+            });
+
+            clearButton.addEventListener('click', () => {
+                selectedIds = [];
+                syncHiddenInput();
+                updateSelectedSummary();
+                renderList(searchInput.value);
+            });
+
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) {
+                    modal.hidden = true;
+                }
+            });
+
+            searchInput.addEventListener('input', () => renderList(searchInput.value));
+            updateSelectedSummary();
+        })();
+    </script>
 {% endif %}
 
 {% if can_review_event %}

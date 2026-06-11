@@ -592,10 +592,8 @@ class EventReviewForm(forms.Form):
 
 
 class ManualCheckInForm(forms.Form):
-    member_keyword = forms.CharField(
-        label='队员学号或用户名',
-        max_length=150,
-        help_text='输入队员学号或登录用户名，为该活动补签。',
+    member_ids = forms.CharField(
+        widget=forms.HiddenInput(),
     )
     remark = forms.CharField(
         label='补签说明',
@@ -606,33 +604,40 @@ class ManualCheckInForm(forms.Form):
     def __init__(self, event, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.event = event
-        self.member_profile = None
+        self.member_profiles = []
+        self.skipped = []
         apply_widget_attrs(self.fields)
 
-    def clean_member_keyword(self):
-        member_keyword = self.cleaned_data['member_keyword'].strip()
-        if not member_keyword:
-            raise forms.ValidationError('请输入队员学号或用户名。')
-        self.member_profile = (
+    def clean_member_ids(self):
+        raw = self.cleaned_data['member_ids'].strip()
+        if not raw:
+            raise forms.ValidationError('请至少选择一名队员。')
+        try:
+            id_list = [int(x) for x in raw.split(',') if x.strip()]
+        except ValueError:
+            raise forms.ValidationError('队员 ID 格式不正确。')
+        if not id_list:
+            raise forms.ValidationError('请至少选择一名队员。')
+        members = list(
             MemberProfile.objects.select_related('user')
-            .filter(
-                status=MemberProfile.Status.ACTIVE,
-            )
-            .filter(
-                Q(student_id=member_keyword) | Q(user__username=member_keyword)
-            )
-            .order_by('id')
-            .first()
+            .filter(pk__in=id_list, status=MemberProfile.Status.ACTIVE)
         )
-        if self.member_profile is None:
-            raise forms.ValidationError('未找到匹配的队员。')
-        if CheckInRecord.objects.filter(
-            member=self.member_profile,
-            event=self.event,
-            status=CheckInRecord.Status.VALID,
-        ).exists():
-            raise forms.ValidationError('该队员已经存在有效签到记录。')
-        return member_keyword
+        found_ids = {m.pk for m in members}
+        missing = [str(i) for i in id_list if i not in found_ids]
+        if missing:
+            raise forms.ValidationError(f'以下队员未找到或非活跃状态：{", ".join(missing)}')
+        existing = set(
+            CheckInRecord.objects.filter(
+                member__in=members,
+                event=self.event,
+                status=CheckInRecord.Status.VALID,
+            ).values_list('member_id', flat=True)
+        )
+        self.member_profiles = [m for m in members if m.pk not in existing]
+        self.skipped = [m for m in members if m.pk in existing]
+        if not self.member_profiles:
+            raise forms.ValidationError('所选队员均已存在有效签到记录。')
+        return raw
 
 
 class AdminCreateForm(forms.Form):
