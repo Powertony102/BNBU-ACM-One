@@ -5,6 +5,47 @@
 {% block topbar_subtitle %}<div class="topbar-subtitle">系列基础信息与 Rating 规则</div>{% endblock %}
 
 {% block content %}
+<style>
+    .form-grid {
+        display: grid;
+        gap: 16px;
+    }
+
+    .form-row label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+    }
+
+    .form-row .helptext {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted-foreground);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    .form-row ul.errorlist {
+        margin: 8px 0 0;
+        padding-left: 18px;
+        color: var(--destructive);
+    }
+
+    .checkbox-row {
+        display: grid;
+        gap: 8px;
+    }
+
+    .checkbox-control {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .checkbox-control label {
+        margin-bottom: 0;
+    }
+</style>
 <section class="page-hero">
     <h2>{{ page_title }}</h2>
     <p>在这里维护系列的生命周期、预期活动数量，以及该系列是否会对成员的 ACM Rating 产生影响。</p>
@@ -44,9 +85,87 @@
         <div class="card-header">
             <h3>系列信息</h3>
         </div>
-        <form method="post">
+        <form method="post" class="form-grid">
             {% csrf_token %}
-            {{ form.as_p }}
+            {{ form.non_field_errors }}
+
+            <div class="form-row">
+                {{ form.title.label_tag }}
+                {{ form.title }}
+                {{ form.title.errors }}
+            </div>
+
+            <div class="form-row">
+                {{ form.description.label_tag }}
+                {{ form.description }}
+                {{ form.description.errors }}
+                {% if form.description.help_text %}
+                    <span class="helptext">{{ form.description.help_text }}</span>
+                {% endif %}
+            </div>
+
+            <div class="form-row">
+                {{ form.series_type.label_tag }}
+                {{ form.series_type }}
+                {{ form.series_type.errors }}
+            </div>
+
+            <div class="form-row">
+                {{ form.status.label_tag }}
+                {{ form.status }}
+                {{ form.status.errors }}
+            </div>
+
+            <div class="form-row">
+                {{ form.start_date.label_tag }}
+                {{ form.start_date }}
+                {{ form.start_date.errors }}
+            </div>
+
+            <div class="form-row">
+                {{ form.end_date.label_tag }}
+                {{ form.end_date }}
+                {{ form.end_date.errors }}
+            </div>
+
+            <div class="form-row">
+                {{ form.expected_event_count.label_tag }}
+                {{ form.expected_event_count }}
+                {{ form.expected_event_count.errors }}
+                {% if form.expected_event_count.help_text %}
+                    <span class="helptext">{{ form.expected_event_count.help_text }}</span>
+                {% endif %}
+            </div>
+
+            <div class="form-row">
+                {{ form.required_checkins_for_rating.label_tag }}
+                {{ form.required_checkins_for_rating }}
+                {{ form.required_checkins_for_rating.errors }}
+                {% if form.required_checkins_for_rating.help_text %}
+                    <span class="helptext">{{ form.required_checkins_for_rating.help_text }}</span>
+                {% endif %}
+            </div>
+
+            <div class="form-row checkbox-row">
+                <div class="checkbox-control">
+                    {{ form.rating_enabled }}
+                    <label for="{{ form.rating_enabled.id_for_label }}">{{ form.rating_enabled.label }}</label>
+                </div>
+                {{ form.rating_enabled.errors }}
+                {% if form.rating_enabled.help_text %}
+                    <span class="helptext">{{ form.rating_enabled.help_text }}</span>
+                {% endif %}
+            </div>
+
+            <div class="form-row">
+                {{ form.rating_points.label_tag }}
+                {{ form.rating_points }}
+                {{ form.rating_points.errors }}
+                {% if form.rating_points.help_text %}
+                    <span class="helptext">{{ form.rating_points.help_text }}</span>
+                {% endif %}
+            </div>
+
             <div class="quick-links" style="margin-top: 16px;">
                 <button type="submit">{{ submit_label }}</button>
                 <a class="quick-link" href="{% url 'event-series-list-manage' %}">返回系列列表</a>

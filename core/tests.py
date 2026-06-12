@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 import re
 from urllib.parse import parse_qs, urlparse
 
@@ -8,6 +8,7 @@ from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import escape
 
 from .competition import sync_event_series_completion, sync_member_competition_profile
 from .forms import ContestTeamForm, EventForm
@@ -1602,6 +1603,8 @@ class EventSeriesManagementTests(TestCase):
             description='系列管理测试。',
             series_type=EventSeries.SeriesType.TRAINING,
             status=EventSeries.Status.PUBLISHED,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 6, 30),
             expected_event_count=6,
             required_checkins_for_rating=2,
             rating_enabled=True,
@@ -1664,6 +1667,25 @@ class EventSeriesManagementTests(TestCase):
         self.assertEqual(list_response.status_code, 403)
         self.assertEqual(create_response.status_code, 403)
         self.assertEqual(edit_response.status_code, 403)
+
+    def test_edit_page_prefills_dates_and_keeps_rating_toggle_in_order(self):
+        self.client.login(username='series-admin', password='AdminPassword2026!')
+        response = self.client.get(reverse('event-series-edit', args=[self.series.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="start_date"')
+        self.assertContains(response, 'value="2026-03-01"', html=False)
+        self.assertContains(response, 'name="end_date"')
+        self.assertContains(response, 'value="2026-06-30"', html=False)
+
+        content = response.content.decode()
+        required_checkins_index = content.index('name="required_checkins_for_rating"')
+        rating_toggle_index = content.index('name="rating_enabled"')
+        rating_label_index = content.index(f'>{escape("参与 Rating")}</label>')
+        rating_points_index = content.index('name="rating_points"')
+        self.assertLess(required_checkins_index, rating_toggle_index)
+        self.assertLess(rating_toggle_index, rating_label_index)
+        self.assertLess(rating_label_index, rating_points_index)
 
     def test_editing_event_series_resyncs_completion_and_rating(self):
         CheckInRecord.objects.create(

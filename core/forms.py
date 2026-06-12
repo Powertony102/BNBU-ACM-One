@@ -506,12 +506,14 @@ class EventSeriesForm(forms.ModelForm):
             'rating_enabled': '参与 Rating',
             'rating_points': 'Rating 分值',
         }
+        widgets = {
+            'start_date': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
+            'end_date': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         apply_widget_attrs(self.fields)
-        self.fields['start_date'].widget = forms.DateInput(attrs={'type': 'date'})
-        self.fields['end_date'].widget = forms.DateInput(attrs={'type': 'date'})
         self.fields['description'].help_text = '可填写该系列的安排、目标人群或阶段说明。'
         self.fields['expected_event_count'].help_text = '用于约束活动里的系列内序号上限。'
         self.fields['required_checkins_for_rating'].help_text = '达到该签到次数后，系列积分才会计入 ACM Rating。'
